@@ -1,7 +1,17 @@
 /**
  * The only module that talks to the backend (SPEC Section 15: keep every API call in one client module).
  */
-import type { ApiErrorBody, PublicUser } from "@dnd/shared";
+import type {
+  ApiErrorBody,
+  DriverView,
+  EntryUpdateResult,
+  PublicUser,
+  RaceDetail,
+  RaceEntryView,
+  RaceSummary,
+  SeasonView,
+  TransitionReason,
+} from "@dnd/shared";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
@@ -38,6 +48,15 @@ export interface CreatedUser {
   setupLink: string;
 }
 
+export interface RaceInput {
+  raceName: string;
+  trackName: string;
+  raceDate: string;
+  nascarRaceId?: number | null;
+  totalLaps?: number | null;
+  scoringRuleKey?: string;
+}
+
 export const api = {
   me: () => request<PublicUser>("GET", "/auth/me"),
   login: (phoneNumber: string, password: string) =>
@@ -56,4 +75,27 @@ export const api = {
   newSetupLink: (id: string) => request<{ setupLink: string }>("POST", `/users/${id}/setup-link`),
   setNotifications: (notificationsEnabled: boolean) =>
     request<PublicUser>("PATCH", "/users/me/notifications", { notificationsEnabled }),
+
+  listSeasons: () => request<SeasonView[]>("GET", "/seasons"),
+
+  listRaces: (seasonId?: string) =>
+    request<RaceSummary[]>("GET", `/races${seasonId ? `?seasonId=${encodeURIComponent(seasonId)}` : ""}`),
+  currentRace: () => request<RaceSummary | null>("GET", "/races/current"),
+  getRace: (id: string) => request<RaceDetail>("GET", `/races/${id}`),
+  createRace: (body: RaceInput) => request<RaceSummary>("POST", "/races", body),
+  updateRace: (id: string, body: Partial<RaceInput>) => request<RaceSummary>("PATCH", `/races/${id}`, body),
+  overrideStatus: (id: string, reason: TransitionReason, note?: string) =>
+    request<RaceSummary>("POST", `/races/${id}/status`, { reason, note }),
+
+  listDrivers: () => request<DriverView[]>("GET", "/drivers"),
+  addEntries: (raceId: string, driverIds: string[]) =>
+    request<RaceEntryView[]>("POST", `/races/${raceId}/entries`, { driverIds }),
+  addNewDriver: (raceId: string, newDriver: { driverName: string; carNumber: string; teamName?: string | null }) =>
+    request<RaceEntryView[]>("POST", `/races/${raceId}/entries`, { newDriver }),
+  copyEntries: (raceId: string, sourceRaceId: string) =>
+    request<RaceEntryView[]>("POST", `/races/${raceId}/entries/copy-from`, { sourceRaceId }),
+  updateEntry: (raceId: string, entryId: string, body: { isEligible?: boolean; carNumber?: string }) =>
+    request<EntryUpdateResult>("PATCH", `/races/${raceId}/entries/${entryId}`, body),
+  deleteEntry: (raceId: string, entryId: string) =>
+    request<void>("DELETE", `/races/${raceId}/entries/${entryId}`),
 };

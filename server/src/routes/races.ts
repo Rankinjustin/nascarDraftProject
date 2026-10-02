@@ -1,0 +1,131 @@
+import { TRANSITIONS, type TransitionReason } from "@dnd/shared";
+import { Router } from "express";
+import { z } from "zod";
+import { currentUser, requireAuth, requireCommissioner } from "../auth/sessions";
+import {
+  addEntries,
+  copyEntriesFrom,
+  deleteEntry,
+  listEntries,
+  updateEntry,
+} from "../services/entries";
+import {
+  createRace,
+  getCurrentRace,
+  getRaceDetail,
+  isScoringRuleKey,
+  listRaces,
+  overrideStatus,
+  updateRace,
+} from "../services/races";
+
+export const racesRouter = Router();
+
+const id = z.uuid();
+const raceParams = z.object({ id });
+const entryParams = z.object({ id, entryId: id });
+
+const raceFields = {
+  raceName: z.string().trim().min(1).max(120),
+  trackName: z.string().trim().min(1).max(120),
+  // The browser converts the commissioner's local time to an ISO instant; stored as UTC.
+  raceDate: z.iso.datetime({ offset: true }).transform((s) => new Date(s)),
+  nascarRaceId: z.number().int().positive().nullable(),
+  totalLaps: z.number().int().positive().nullable(),
+  scoringRuleKey: z.string().refine(isScoringRuleKey, "Unknown scoring rule."),
+};
+
+const createBody = z.object({
+  seasonId: id.optional(),
+  raceName: raceFields.raceName,
+  trackName: raceFields.trackName,
+  raceDate: raceFields.raceDate,
+  nascarRaceId: raceFields.nascarRaceId.optional(),
+  totalLaps: raceFields.totalLaps.optional(),
+  scoringRuleKey: raceFields.scoringRuleKey.optional(),
+});
+
+const patchBody = z
+  .object(raceFields)
+  .partial()
+  .refine((b) => Object.keys(b).length > 0, "Nothing to change.");
+
+// Every reason is accepted here so the service can answer a disallowed one with 409 (SPEC Section 13).
+const statusBody = z.object({
+  reason: z.enum(Object.keys(TRANSITIONS) as [TransitionReason, ...TransitionReason[]]),
+  note: z.string().trim().max(500).optional(),
+});
+
+const newDriver = z.object({
+  driverName: z.string().trim().min(1).max(80),
+  carNumber: z.string().trim().regex(/^\d{1,3}$/, "Car numbers are 1–3 digits."),
+  teamName: z.string().trim().max(80).nullable().optional(),
+});
+const addEntriesBody = z.union([
+  z.object({ driverIds: z.array(id).min(1).max(100) }),
+  z.object({ newDriver }),
+]);
+
+const entryPatch = z
+  .object({
+    isEligible: z.boolean(),
+    carNumber: newDriver.shape.carNumber,
+  })
+  .partial()
+  .refine((b) => Object.keys(b).length > 0, "Nothing to change.");
+
+racesRouter.get("/", requireAuth, async (req, res) => {
+  const { seasonId } = z.object({ seasonId: id.optional() }).parse(req.query);
+  res.json(await listRaces(seasonId));
+});
+
+racesRouter.get("/current", requireAuth, async (_req, res) => {
+  res.json(await getCurrentRace());
+});
+
+racesRouter.get("/:id", requireAuth, async (req, res) => {
+  const { id } = raceParams.parse(req.params);
+  res.json(await getRaceDetail(id));
+});
+
+racesRouter.post("/", requireCommissioner, async (req, res) => {
+  res.status(201).json(await createRace(createBody.parse(req.body)));
+});
+
+racesRouter.patch("/:id", requireCommissioner, async (req, res) => {
+  const { id } = raceParams.parse(req.params);
+  res.json(await updateRace(id, patchBody.parse(req.body)));
+});
+
+racesRouter.post("/:id/status", requireCommissioner, async (req, res) => {
+  const { id } = raceParams.parse(req.params);
+  const { reason, note } = statusBody.parse(req.body);
+  res.json(await overrideStatus(id, reason, currentUser(req).id, note));
+});
+
+racesRouter.get("/:id/entries", requireAuth, async (req, res) => {
+  const { id } = raceParams.parse(req.params);
+  res.json(await listEntries(id));
+});
+
+racesRouter.post("/:id/entries", requireCommissioner, async (req, res) => {
+  const { id } = raceParams.parse(req.params);
+  res.status(201).json(await addEntries(id, addEntriesBody.parse(req.body)));
+});
+
+racesRouter.post("/:id/entries/copy-from", requireCommissioner, async (req, res) => {
+  const { id } = raceParams.parse(req.params);
+  const { sourceRaceId } = z.object({ sourceRaceId: z.uuid() }).parse(req.body);
+  res.json(await copyEntriesFrom(id, sourceRaceId));
+});
+
+racesRouter.patch("/:id/entries/:entryId", requireCommissioner, async (req, res) => {
+  const { id, entryId } = entryParams.parse(req.params);
+  res.json(await updateEntry(id, entryId, entryPatch.parse(req.body)));
+});
+
+racesRouter.delete("/:id/entries/:entryId", requireCommissioner, async (req, res) => {
+  const { id, entryId } = entryParams.parse(req.params);
+  await deleteEntry(id, entryId);
+  res.status(204).end();
+});

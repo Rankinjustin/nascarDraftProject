@@ -1,7 +1,9 @@
-import { Route, Routes } from "react-router";
+import { Outlet, Route, Routes } from "react-router";
 import { RequireAuth } from "./auth";
 import { Layout } from "./components/Layout";
-import { AdminPage } from "./pages/AdminPage";
+import { AdminPage, MembersTab } from "./pages/AdminPage";
+import { AdminRacePage } from "./pages/AdminRacePage";
+import { AdminRacesTab } from "./pages/AdminRacesTab";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { ComingSoon } from "./pages/ComingSoon";
@@ -30,10 +32,16 @@ export function App() {
           path="admin"
           element={
             <RequireAuth commissioner>
-              <AdminPage />
+              <Outlet />
             </RequireAuth>
           }
-        />
+        >
+          <Route element={<AdminPage />}>
+            <Route index element={<AdminRacesTab />} />
+            <Route path="members" element={<MembersTab />} />
+          </Route>
+          <Route path="races/:raceId" element={<AdminRacePage />} />
+        </Route>
         <Route path="*" element={<ComingSoon title="Not found" />} />
       </Route>
     </Routes>

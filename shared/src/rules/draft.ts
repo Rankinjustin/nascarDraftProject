@@ -1,3 +1,6 @@
+/** Drivers per roster. Total slots for a race = drafters × ROUNDS. */
+export const ROUNDS = 3;
+
 /** Round 1 forward, round 2 reverse, round 3 forward. Returns one userId per slot. */
 export function snakeOrder(orderedUserIds: string[], rounds: number): string[] {
   const slots: string[] = [];

@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+
 import { normalizePhone } from "@dnd/shared";
 import { Router } from "express";
 import { z } from "zod";
@@ -6,7 +6,7 @@ import { toPublicUser } from "../auth/publicUser";
 import { currentUser, requireAuth, requireCommissioner } from "../auth/sessions";
 import { issueSetupLink } from "../auth/setupTokens";
 import { prisma } from "../db";
-import { HttpError, notFound } from "../errors";
+import { HttpError, isUniqueViolation, notFound } from "../errors";
 
 export const usersRouter = Router();
 
@@ -27,9 +27,6 @@ const role = z.enum(["MEMBER", "COMMISSIONER"]);
 
 const phoneTakenError = () => new HttpError(409, "PHONE_TAKEN", "Someone already has that phone number.");
 
-function isUniqueViolation(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
-}
 
 usersRouter.patch("/me/notifications", requireAuth, async (req, res) => {
   const { notificationsEnabled } = z.object({ notificationsEnabled: z.boolean() }).parse(req.body);

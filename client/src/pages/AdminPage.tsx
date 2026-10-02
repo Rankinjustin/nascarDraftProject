@@ -2,23 +2,37 @@ import type { PublicUser } from "@dnd/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Link2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import { NavLink, Outlet } from "react-router";
 import { api } from "../api";
 import { meKey, useMe } from "../auth";
 import { PhoneInput } from "../components/PhoneInput";
 
 const usersKey = ["users"] as const;
 
-/** Commissioner tools. Phase 1: user admin and setup links. */
+const tabClass = ({ isActive }: { isActive: boolean }) =>
+  `flex min-h-11 flex-1 items-center justify-center rounded-lg font-semibold ${
+    isActive ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"
+  }`;
+
+/** Commissioner tools: races and entries, league members. */
 export function AdminPage() {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <h1 className="text-2xl font-bold">Commissioner</h1>
-      <UsersSection />
+      <nav className="flex gap-1 rounded-xl border border-slate-800 p-1">
+        <NavLink to="/admin" end className={tabClass}>
+          Races
+        </NavLink>
+        <NavLink to="/admin/members" className={tabClass}>
+          Members
+        </NavLink>
+      </nav>
+      <Outlet />
     </div>
   );
 }
 
-function UsersSection() {
+export function MembersTab() {
   const queryClient = useQueryClient();
   const users = useQuery({ queryKey: usersKey, queryFn: api.listUsers });
   // The most recent setup link, shown once so the commissioner can copy it into the group chat.

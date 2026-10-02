@@ -6,7 +6,10 @@ import { env } from "./env";
 import { errorHandler, notFound } from "./errors";
 import { csrfGuard } from "./middleware/csrf";
 import { authRouter } from "./routes/auth";
+import { driversRouter } from "./routes/drivers";
 import { healthRouter } from "./routes/health";
+import { racesRouter } from "./routes/races";
+import { seasonsRouter } from "./routes/seasons";
 import { usersRouter } from "./routes/users";
 
 export function createApp() {
@@ -23,6 +26,9 @@ export function createApp() {
   api.use(loadSession);
   api.use("/auth", authRouter);
   api.use("/users", usersRouter);
+  api.use("/seasons", seasonsRouter);
+  api.use("/races", racesRouter);
+  api.use("/drivers", driversRouter);
   api.use(() => {
     throw notFound("Route");
   });

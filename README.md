@@ -30,7 +30,7 @@ Open a printed setup link, set a password, and you're in. `users.json` is gitign
 | Command             | Does                                     |
 |---------------------|------------------------------------------|
 | `npm run dev`       | API + client with reload                 |
-| `npm test`          | Unit tests                               |
+| `npm test`          | Unit tests, plus integration tests when `TEST_DATABASE_URL` is set (a separate `_test` database; its tables are emptied on every run) |
 | `npm run typecheck` | TypeScript across all three packages     |
 | `npm run db:migrate`| Create/apply a migration after editing `schema.prisma` |
 | `npm run db:seed`   | Re-run the seed (safe to repeat)         |
