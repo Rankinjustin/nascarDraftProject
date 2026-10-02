@@ -1,0 +1,218 @@
+[
+  {
+    "nascarDriverId": 4001,
+    "driverName": "Ross Chastain",
+    "carNumber": "1",
+    "teamName": "Trackhouse Racing"
+  },
+  {
+    "nascarDriverId": 4180,
+    "driverName": "Austin Cindric",
+    "carNumber": "2",
+    "teamName": "Team Penske"
+  },
+  {
+    "nascarDriverId": 3873,
+    "driverName": "Austin Dillon",
+    "carNumber": "3",
+    "teamName": "Richard Childress Racing"
+  },
+  {
+    "nascarDriverId": 4224,
+    "driverName": "Noah Gragson",
+    "carNumber": "4",
+    "teamName": "Front Row Motorsports"
+  },
+  {
+    "nascarDriverId": 4030,
+    "driverName": "Kyle Larson",
+    "carNumber": "5",
+    "teamName": "Hendrick Motorsports"
+  },
+  {
+    "nascarDriverId": 1816,
+    "driverName": "Brad Keselowski",
+    "carNumber": "6",
+    "teamName": "RFK Racing"
+  },
+  {
+    "nascarDriverId": 4113,
+    "driverName": "Daniel Suárez",
+    "carNumber": "7",
+    "teamName": "Spire Motorsports"
+  },
+  {
+    "nascarDriverId": 4062,
+    "driverName": "Chase Elliott",
+    "carNumber": "9",
+    "teamName": "Hendrick Motorsports"
+  },
+  {
+    "nascarDriverId": 4013,
+    "driverName": "Ty Dillon",
+    "carNumber": "10",
+    "teamName": "Kaulig Racing"
+  },
+  {
+    "nascarDriverId": 1361,
+    "driverName": "Denny Hamlin",
+    "carNumber": "11",
+    "teamName": "Joe Gibbs Racing"
+  },
+  {
+    "nascarDriverId": 4023,
+    "driverName": "Ryan Blaney",
+    "carNumber": "12",
+    "teamName": "Team Penske"
+  },
+  {
+    "nascarDriverId": 3774,
+    "driverName": "AJ Allmendinger",
+    "carNumber": "16",
+    "teamName": "Kaulig Racing"
+  },
+  {
+    "nascarDriverId": 3989,
+    "driverName": "Chris Buescher",
+    "carNumber": "17",
+    "teamName": "RFK Racing"
+  },
+  {
+    "nascarDriverId": 4228,
+    "driverName": "Chase Briscoe",
+    "carNumber": "19",
+    "teamName": "Joe Gibbs Racing"
+  },
+  {
+    "nascarDriverId": 4153,
+    "driverName": "Christopher Bell",
+    "carNumber": "20",
+    "teamName": "Joe Gibbs Racing"
+  },
+  {
+    "nascarDriverId": 4123,
+    "driverName": "Josh Berry",
+    "carNumber": "21",
+    "teamName": "Wood Brothers Racing"
+  },
+  {
+    "nascarDriverId": 3859,
+    "driverName": "Joey Logano",
+    "carNumber": "22",
+    "teamName": "Team Penske"
+  },
+  {
+    "nascarDriverId": 4025,
+    "driverName": "Bubba Wallace",
+    "carNumber": "23",
+    "teamName": "23XI Racing"
+  },
+  {
+    "nascarDriverId": 4184,
+    "driverName": "William Byron",
+    "carNumber": "24",
+    "teamName": "Hendrick Motorsports"
+  },
+  {
+    "nascarDriverId": 4231,
+    "driverName": "Todd Gilliland",
+    "carNumber": "34",
+    "teamName": "Front Row Motorsports"
+  },
+  {
+    "nascarDriverId": 4269,
+    "driverName": "Riley Herbst",
+    "carNumber": "35",
+    "teamName": "23XI Racing"
+  },
+  {
+    "nascarDriverId": 4272,
+    "driverName": "Zane Smith",
+    "carNumber": "38",
+    "teamName": "Front Row Motorsports"
+  },
+  {
+    "nascarDriverId": 4104,
+    "driverName": "Cole Custer",
+    "carNumber": "41",
+    "teamName": "Haas Factory Team"
+  },
+  {
+    "nascarDriverId": 4092,
+    "driverName": "John H. Nemechek",
+    "carNumber": "42",
+    "teamName": "Legacy Motor Club"
+  },
+  {
+    "nascarDriverId": 4059,
+    "driverName": "Erik Jones",
+    "carNumber": "43",
+    "teamName": "Legacy Motor Club"
+  },
+  {
+    "nascarDriverId": 4065,
+    "driverName": "Tyler Reddick",
+    "carNumber": "45",
+    "teamName": "23XI Racing"
+  },
+  {
+    "nascarDriverId": 3888,
+    "driverName": "Ricky Stenhouse Jr",
+    "carNumber": "47",
+    "teamName": "HYAK Motorsports"
+  },
+  {
+    "nascarDriverId": 4045,
+    "driverName": "Alex Bowman",
+    "carNumber": "48",
+    "teamName": "Hendrick Motorsports"
+  },
+  {
+    "nascarDriverId": 4125,
+    "driverName": "Cody Ware",
+    "carNumber": "51",
+    "teamName": "Rick Ware Racing"
+  },
+  {
+    "nascarDriverId": 4368,
+    "driverName": "Ty Gibbs",
+    "carNumber": "54",
+    "teamName": "Joe Gibbs Racing"
+  },
+  {
+    "nascarDriverId": 4070,
+    "driverName": "Ryan Preece",
+    "carNumber": "60",
+    "teamName": "RFK Racing"
+  },
+  {
+    "nascarDriverId": 3832,
+    "driverName": "Michael McDowell",
+    "carNumber": "71",
+    "teamName": "Spire Motorsports"
+  },
+  {
+    "nascarDriverId": 4326,
+    "driverName": "Carson Hocevar",
+    "carNumber": "77",
+    "teamName": "Spire Motorsports"
+  },
+  {
+    "nascarDriverId": 4481,
+    "driverName": "Connor Zilisch",
+    "carNumber": "88",
+    "teamName": "Trackhouse Racing"
+  },
+  {
+    "nascarDriverId": 4469,
+    "driverName": "Shane Van Gisbergen",
+    "carNumber": "97",
+    "teamName": "Trackhouse Racing"
+  },
+  {
+    "nascarDriverId": 4133,
+    "driverName": "Austin Hill",
+    "carNumber": "133",
+    "teamName": "Richard Childress Racing"
+  }
+]

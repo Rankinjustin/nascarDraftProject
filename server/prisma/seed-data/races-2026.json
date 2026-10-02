@@ -1,0 +1,254 @@
+[
+  {
+    "nascarRaceId": 5596,
+    "raceName": "DAYTONA 500",
+    "trackName": "Daytona International Speedway",
+    "startTimeEastern": "2026-02-15T14:30:00",
+    "totalLaps": 200
+  },
+  {
+    "nascarRaceId": 5597,
+    "raceName": "Autotrader 400",
+    "trackName": "Atlanta Motor Speedway",
+    "startTimeEastern": "2026-02-22T15:00:00",
+    "totalLaps": 260
+  },
+  {
+    "nascarRaceId": 5598,
+    "raceName": "DuraMAX Texas Grand Prix Powered by RelaDyne",
+    "trackName": "Circuit of The Americas",
+    "startTimeEastern": "2026-03-01T15:30:00",
+    "totalLaps": 95
+  },
+  {
+    "nascarRaceId": 5599,
+    "raceName": "Straight Talk Wireless 500",
+    "trackName": "Phoenix Raceway",
+    "startTimeEastern": "2026-03-08T15:30:00",
+    "totalLaps": 312
+  },
+  {
+    "nascarRaceId": 5600,
+    "raceName": "Pennzoil 400 presented by Jiffy Lube",
+    "trackName": "Las Vegas Motor Speedway",
+    "startTimeEastern": "2026-03-15T16:00:00",
+    "totalLaps": 267
+  },
+  {
+    "nascarRaceId": 5603,
+    "raceName": "Goodyear 400",
+    "trackName": "Darlington Raceway",
+    "startTimeEastern": "2026-03-22T15:00:00",
+    "totalLaps": 293
+  },
+  {
+    "nascarRaceId": 5602,
+    "raceName": "Cook Out 400",
+    "trackName": "Martinsville Speedway",
+    "startTimeEastern": "2026-03-29T15:30:00",
+    "totalLaps": 400
+  },
+  {
+    "nascarRaceId": 5604,
+    "raceName": "Food City 500",
+    "trackName": "Bristol Motor Speedway",
+    "startTimeEastern": "2026-04-12T15:00:00",
+    "totalLaps": 500
+  },
+  {
+    "nascarRaceId": 5607,
+    "raceName": "AdventHealth 400",
+    "trackName": "Kansas Speedway",
+    "startTimeEastern": "2026-04-19T13:00:00",
+    "totalLaps": 267
+  },
+  {
+    "nascarRaceId": 5605,
+    "raceName": "Jack Link's 500",
+    "trackName": "Talladega Superspeedway",
+    "startTimeEastern": "2026-04-26T15:00:00",
+    "totalLaps": 188
+  },
+  {
+    "nascarRaceId": 5606,
+    "raceName": "Würth 400 presented by LIQUI MOLY",
+    "trackName": "Texas Motor Speedway",
+    "startTimeEastern": "2026-05-03T15:30:00",
+    "totalLaps": 267
+  },
+  {
+    "nascarRaceId": 5621,
+    "raceName": "Go Bowling at The Glen",
+    "trackName": "Watkins Glen International",
+    "startTimeEastern": "2026-05-10T15:00:00",
+    "totalLaps": 100
+  },
+  {
+    "nascarRaceId": 5610,
+    "raceName": "Coca-Cola 600",
+    "trackName": "Charlotte Motor Speedway",
+    "startTimeEastern": "2026-05-24T18:00:00",
+    "totalLaps": 400
+  },
+  {
+    "nascarRaceId": 5611,
+    "raceName": "Cracker Barrel 400",
+    "trackName": "Nashville Superspeedway",
+    "startTimeEastern": "2026-05-31T19:00:00",
+    "totalLaps": 300
+  },
+  {
+    "nascarRaceId": 5612,
+    "raceName": "FireKeepers Casino 400",
+    "trackName": "Michigan International Speedway",
+    "startTimeEastern": "2026-06-07T15:00:00",
+    "totalLaps": 200
+  },
+  {
+    "nascarRaceId": 5614,
+    "raceName": "Great American Getaway 400 presented by VISITPA",
+    "trackName": "Pocono Raceway",
+    "startTimeEastern": "2026-06-14T15:00:00",
+    "totalLaps": 160
+  },
+  {
+    "nascarRaceId": 5613,
+    "raceName": "Anduril 250",
+    "trackName": "San Diego Street Course",
+    "startTimeEastern": "2026-06-21T16:00:00",
+    "totalLaps": 75
+  },
+  {
+    "nascarRaceId": 5617,
+    "raceName": "Toyota / Save Mart 350",
+    "trackName": "Sonoma Raceway",
+    "startTimeEastern": "2026-06-28T15:30:00",
+    "totalLaps": 110
+  },
+  {
+    "nascarRaceId": 5616,
+    "raceName": "eero 400",
+    "trackName": "Chicagoland Speedway",
+    "startTimeEastern": "2026-07-05T17:00:00",
+    "totalLaps": 267
+  },
+  {
+    "nascarRaceId": 5615,
+    "raceName": "Quaker State 400 Available at Walmart",
+    "trackName": "Atlanta Motor Speedway",
+    "startTimeEastern": "2026-07-12T19:00:00",
+    "totalLaps": 260
+  },
+  {
+    "nascarRaceId": 5618,
+    "raceName": "Window World 450",
+    "trackName": "North Wilkesboro Speedway",
+    "startTimeEastern": "2026-07-19T19:00:00",
+    "totalLaps": 450
+  },
+  {
+    "nascarRaceId": 5619,
+    "raceName": "Brickyard 400 presented by PPG",
+    "trackName": "Indianapolis Motor Speedway",
+    "startTimeEastern": "2026-07-26T14:00:00",
+    "totalLaps": 160
+  },
+  {
+    "nascarRaceId": 5620,
+    "raceName": "Iowa Corn 350 Powered by Ethanol",
+    "trackName": "Iowa Speedway",
+    "startTimeEastern": "2026-08-09T15:30:00",
+    "totalLaps": 350
+  },
+  {
+    "nascarRaceId": 5622,
+    "raceName": "Cook Out 400",
+    "trackName": "Richmond Raceway",
+    "startTimeEastern": "2026-08-15T19:00:00",
+    "totalLaps": 400
+  },
+  {
+    "nascarRaceId": 5627,
+    "raceName": "Dollar Tree 301",
+    "trackName": "New Hampshire Motor Speedway",
+    "startTimeEastern": "2026-08-23T15:00:00",
+    "totalLaps": 301
+  },
+  {
+    "nascarRaceId": 5623,
+    "raceName": "Coke Zero Sugar 400",
+    "trackName": "Daytona International Speedway",
+    "startTimeEastern": "2026-08-29T19:30:00",
+    "totalLaps": 160
+  },
+  {
+    "nascarRaceId": 5624,
+    "raceName": "Cook Out Southern 500",
+    "trackName": "Darlington Raceway",
+    "startTimeEastern": "2026-09-06T17:00:00",
+    "totalLaps": 367
+  },
+  {
+    "nascarRaceId": 5625,
+    "raceName": "Enjoy Illinois 300",
+    "trackName": "World Wide Technology Raceway",
+    "startTimeEastern": "2026-09-13T15:00:00",
+    "totalLaps": 240
+  },
+  {
+    "nascarRaceId": 5626,
+    "raceName": "Bass Pro Shops Night Race",
+    "trackName": "Bristol Motor Speedway",
+    "startTimeEastern": "2026-09-19T19:30:00",
+    "totalLaps": 500
+  },
+  {
+    "nascarRaceId": 5628,
+    "raceName": "Hollywood Casino 400",
+    "trackName": "Kansas Speedway",
+    "startTimeEastern": "2026-09-27T15:00:00",
+    "totalLaps": 267
+  },
+  {
+    "nascarRaceId": 5630,
+    "raceName": "South Point 400",
+    "trackName": "Las Vegas Motor Speedway",
+    "startTimeEastern": "2026-10-04T17:30:00",
+    "totalLaps": 267
+  },
+  {
+    "nascarRaceId": 5629,
+    "raceName": "Bank of America 400",
+    "trackName": "Charlotte Motor Speedway",
+    "startTimeEastern": "2026-10-11T15:00:00",
+    "totalLaps": 267
+  },
+  {
+    "nascarRaceId": 5633,
+    "raceName": "Freeway Insurance 500",
+    "trackName": "Phoenix Raceway",
+    "startTimeEastern": "2026-10-18T15:00:00",
+    "totalLaps": 312
+  },
+  {
+    "nascarRaceId": 5631,
+    "raceName": "YellaWood 500",
+    "trackName": "Talladega Superspeedway",
+    "startTimeEastern": "2026-10-25T14:00:00",
+    "totalLaps": 188
+  },
+  {
+    "nascarRaceId": 5632,
+    "raceName": "Xfinity 500",
+    "trackName": "Martinsville Speedway",
+    "startTimeEastern": "2026-11-01T14:00:00",
+    "totalLaps": 500
+  },
+  {
+    "nascarRaceId": 5601,
+    "raceName": "NASCAR Championship Race",
+    "trackName": "Homestead-Miami Speedway",
+    "startTimeEastern": "2026-11-08T15:00:00",
+    "totalLaps": 267
+  }
+]

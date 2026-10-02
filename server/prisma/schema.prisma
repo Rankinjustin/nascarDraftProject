@@ -1,0 +1,305 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  MEMBER
+  COMMISSIONER
+}
+
+enum RaceStatus {
+  UPCOMING    // created, no draft order yet
+  DRAFTING    // order set, picks in progress (typically Wednesday → Sunday)
+  LOCKED      // draft closed (all picks made, or deadline passed), race not yet green
+  LIVE        // race running, poller writing results
+  COMPLETED   // finish positions frozen, weekly results snapshotted
+  CORRECTING  // commissioner reopened a completed race to fix results; poller ignores it
+}
+
+enum DraftEventType {
+  ORDER_GENERATED
+  ORDER_REGENERATED
+  PICK_MADE
+  PICK_MADE_ON_BEHALF
+  PICK_REVERTED
+  PICK_SWAPPED
+  DRAFT_RESET
+  STATUS_CHANGED
+  RESULTS_CORRECTED
+}
+
+model User {
+  id                   String   @id @default(uuid())
+  phoneNumber          String   @unique   // E.164, e.g. "+19205551234"
+  email                String?  @unique   // optional, not used for auth
+  passwordHash         String?            // null until the setup link is used
+  displayName          String
+  role                 Role     @default(MEMBER)
+  isActive             Boolean  @default(true)
+  notificationsEnabled Boolean  @default(true)
+  discordUserId        String?            // optional; lets Discord turn pings @mention the right person
+  createdAt            DateTime @default(now())
+
+  draftOrders   DraftOrder[]
+  setupTokens   SetupToken[]
+  picks         Pick[]         @relation("PickOwner")
+  picksMade     Pick[]         @relation("PickCreator")
+  weeklyResults WeeklyResult[]
+  draftEvents   DraftEvent[]
+  sessions      Session[]
+  pushSubs      PushSubscription[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Single-use link the commissioner hands out for initial password set / reset.
+model SetupToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Season {
+  id        String  @id @default(uuid())
+  year      Int
+  seriesId  Int     @default(1)   // 1 = Cup, 2 = Xfinity, 3 = Trucks
+  name      String
+  isCurrent Boolean @default(false) // service layer ensures at most one is true
+
+  races Race[]
+
+  @@unique([year, seriesId])
+}
+
+model Race {
+  id             String     @id @default(uuid())
+  seasonId       String
+  nascarRaceId   Int?       @unique   // required before the poller will touch this race (Section 7)
+  raceName       String
+  trackName      String
+  raceDate       DateTime             // published race start time, UTC. Also the pick deadline.
+  status         RaceStatus @default(UPCOMING)
+  wentLiveAt     DateTime?            // first LIVE transition; never cleared, even by false_start
+  scoringRuleKey String     @default("average_finish")
+  totalLaps      Int?
+  currentLap     Int?
+  flagState      Int?
+  feedUpdatedAt  DateTime?
+  checkeredSeenAt DateTime?           // first time the feed reported a checkered flag for this race
+  completedAt    DateTime?
+  createdAt      DateTime   @default(now())
+
+  season        Season             @relation(fields: [seasonId], references: [id])
+  entries       RaceEntry[]
+  draftOrders   DraftOrder[]
+  picks         Pick[]
+  qualifying    QualifyingResult[]
+  results       RaceResult[]
+  weeklyResults WeeklyResult[]
+  draftEvents   DraftEvent[]
+
+  @@index([seasonId, raceDate])
+}
+
+model Driver {
+  id             String  @id @default(uuid())
+  nascarDriverId Int?    @unique   // null for a driver added by hand; Postgres allows many nulls here
+  driverName     String
+  carNumber      String
+  teamName       String?
+  isActive       Boolean @default(true)
+
+  entries    RaceEntry[]
+  picks      Pick[]
+  qualifying QualifyingResult[]
+  results    RaceResult[]
+}
+
+// The list of drivers actually entered in a given race.
+// Picks are validated against this — you cannot draft a driver who isn't running.
+model RaceEntry {
+  id         String  @id @default(uuid())
+  raceId     String
+  driverId   String
+  carNumber  String
+  isEligible Boolean @default(true)  // commissioner can strike a driver (withdrawal, etc.)
+
+  race   Race   @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  @@unique([raceId, driverId])
+  @@index([raceId])
+}
+
+model DraftOrder {
+  id           String @id @default(uuid())
+  raceId       String
+  userId       String
+  pickPosition Int    // 1..N
+
+  race Race @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([raceId, userId])
+  @@unique([raceId, pickPosition])
+}
+
+model Pick {
+  id                String   @id @default(uuid())
+  raceId            String
+  userId            String   // whose roster this driver belongs to
+  driverId          String
+  createdByUserId   String   // who physically made the pick (= userId, unless commish picked on behalf)
+  overallPickNumber Int      // 1..(N*3), contiguous
+  roundNumber       Int      // 1, 2, or 3
+  createdAt         DateTime @default(now())
+
+  race    Race   @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  user    User   @relation("PickOwner", fields: [userId], references: [id])
+  creator User   @relation("PickCreator", fields: [createdByUserId], references: [id])
+  driver  Driver @relation(fields: [driverId], references: [id])
+
+  @@unique([raceId, driverId])           // no duplicate drivers in a race
+  @@unique([raceId, overallPickNumber])  // backstop; the race lock is the real guard
+  @@index([raceId, userId])
+}
+
+// Captured while qualifying is the live session. The live feed does NOT retain
+// qualifying data once the next session starts, so this must be captured, not fetched later.
+// Qualifying usually happens while the draft is still running.
+model QualifyingResult {
+  id              String   @id @default(uuid())
+  raceId          String
+  driverId        String
+  startPosition   Int
+  qualifyingTime  Float?   // seconds; null when rained out or lineup set by formula
+  qualifyingSpeed Float?   // mph
+  isPole          Boolean  @default(false)
+  source          String   @default("feed") // "feed" | "manual"
+  createdAt       DateTime @default(now())
+
+  race   Race   @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  @@unique([raceId, driverId])
+  @@index([raceId])
+  // NOTE: deliberately NO unique on [raceId, startPosition] — see Section 7,
+  // "Qualifying capture". Positions shift during a live session and a unique
+  // constraint there makes whole-grid replacement awkward.
+}
+
+model RaceResult {
+  id              String   @id @default(uuid())
+  raceId          String
+  driverId        String
+  runningPosition Int      // live, overwritten every poll while LIVE
+  finishPosition  Int?     // filled at completion; scoring reads this
+  lapsCompleted   Int      @default(0)
+  status          String   @default("RUNNING") // RUNNING, OUT, FINISHED
+  source          String   @default("feed")    // "feed" | "manual" — manual rows were created by the commissioner
+  updatedAt       DateTime @updatedAt
+
+  race   Race   @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  driver Driver @relation(fields: [driverId], references: [id])
+
+  @@unique([raceId, driverId])
+}
+
+// Frozen snapshot of a completed week. Season stats read from here,
+// so a later feed correction can never silently rewrite history.
+model WeeklyResult {
+  id             String   @id @default(uuid())
+  raceId         String
+  userId         String
+  score          Float
+  rank           Int
+  scoringRuleKey String
+  fieldSize      Int      // the fieldSize used to score DNFs/DNSs this week
+  driverFinishes Json     // [{ driverId | null, driverName, carNumber, finishPosition }] — always 3 entries; empty slots have driverId null
+  createdAt      DateTime @default(now())
+
+  race Race @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([raceId, userId])
+  @@index([userId])
+}
+
+model PushSubscription {
+  id         String    @id @default(uuid())
+  userId     String
+  endpoint   String    @unique   // upsert on endpoint: a new login on the same device moves the row
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Claim-then-send ledger. Guarantees a user is notified at most once per slot per
+// channel per kind, and lets the sweeper retry sends that failed.
+model NotificationLog {
+  id                String   @id @default(uuid())
+  raceId            String
+  userId            String   @default("BROADCAST") // sentinel, NOT null — see note below
+  channel           String   // "web_push", "discord"
+  kind              String   // see Section 14
+  overallPickNumber Int      @default(0)           // sentinel, NOT null
+  succeeded         Boolean  @default(false)
+  claimedAt         DateTime?                       // set by whoever is currently sending; see Section 14
+  attempts          Int      @default(0)
+  error             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([raceId, userId, channel, kind, overallPickNumber])
+  @@index([raceId])
+}
+// WHY SENTINELS INSTEAD OF NULL: in PostgreSQL, NULL is never equal to NULL,
+// so a unique constraint containing a nullable column does not dedupe rows where
+// that column is null. Broadcast notifications (no specific user, no pick number)
+// would silently insert a new row on every retry and notify the league repeatedly.
+// Sentinel values make the constraint actually fire.
+// "BROADCAST" is used only for channels that deliver a broadcast as ONE message (Discord).
+// Web-push broadcasts write one row per recipient userId, so a failure for one phone
+// is retried for that phone only.
+
+model DraftEvent {
+  id          String         @id @default(uuid())
+  raceId      String
+  actorUserId String?        // null = the system (cron job, deadline, poller)
+  type        DraftEventType
+  payload     Json
+  createdAt   DateTime       @default(now())
+
+  race  Race  @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorUserId], references: [id])
+
+  @@index([raceId, createdAt])
+}

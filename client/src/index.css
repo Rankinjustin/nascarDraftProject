@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+/* Shared form and surface styles. 44px minimum tap targets (SPEC Section 11). */
+@utility input {
+  @apply min-h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-base text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none;
+}
+@utility btn-primary {
+  @apply inline-flex min-h-11 items-center justify-center rounded-lg bg-sky-600 px-4 font-semibold text-white hover:bg-sky-500 disabled:opacity-50;
+}
+@utility btn-secondary {
+  @apply inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-700 px-4 font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50;
+}
+@utility card {
+  @apply rounded-xl border border-slate-800 bg-slate-900 p-4;
+}
+@utility label {
+  @apply mb-1 block text-sm text-slate-400;
+}

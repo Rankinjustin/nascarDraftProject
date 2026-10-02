@@ -1,0 +1,11 @@
+[
+  { "displayName": "Justin", "phoneNumber": "(555) 010-0001", "role": "COMMISSIONER" },
+  { "displayName": "Player 2", "phoneNumber": "(555) 010-0002" },
+  { "displayName": "Player 3", "phoneNumber": "(555) 010-0003" },
+  { "displayName": "Player 4", "phoneNumber": "(555) 010-0004" },
+  { "displayName": "Player 5", "phoneNumber": "(555) 010-0005" },
+  { "displayName": "Player 6", "phoneNumber": "(555) 010-0006" },
+  { "displayName": "Player 7", "phoneNumber": "(555) 010-0007" },
+  { "displayName": "Player 8", "phoneNumber": "(555) 010-0008" },
+  { "displayName": "Player 9", "phoneNumber": "(555) 010-0009" }
+]
