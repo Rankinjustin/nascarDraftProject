@@ -40,6 +40,9 @@ export function AdminRacePage() {
             <div className="text-slate-400">
               {race.data.trackName} · {formatRaceDate(race.data.raceDate)}
             </div>
+            <Link to={`/draft/${race.data.id}`} className="mt-2 inline-block text-sky-400 hover:underline">
+              {race.data.status === "UPCOMING" ? "Spin the wheel in the draft room" : "Open the draft room"}
+            </Link>
           </div>
           <StatusPanel race={race.data} />
           {/* Keyed so the form resets to the saved values after another commissioner's edit lands. */}
@@ -106,7 +109,7 @@ function StatusPanel({ race }: { race: RaceDetail }) {
       {options.length === 0 && (
         <p className="text-sm text-slate-400">
           {race.status === "UPCOMING"
-            ? "The draft opens when the wheel is spun (Phase 4)."
+            ? "The draft opens when the wheel is spun in the draft room."
             : "No overrides apply right now."}
         </p>
       )}

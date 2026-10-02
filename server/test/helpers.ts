@@ -79,10 +79,17 @@ export interface ApiResponse<T = any> {
   body: T;
 }
 
-export async function call<T = any>(cookie: string | null, method: string, path: string, body?: unknown): Promise<ApiResponse<T>> {
+export async function call<T = any>(
+  cookie: string | null,
+  method: string,
+  path: string,
+  body?: unknown,
+  extraHeaders: Record<string, string> = {},
+): Promise<ApiResponse<T>> {
   const res = await fetch(baseUrl + path, {
     method,
     headers: {
+      ...extraHeaders,
       ...(cookie ? { Cookie: cookie } : {}),
       ...(method === "GET" ? {} : { "Content-Type": "application/json", Origin: env.FRONTEND_ORIGIN }),
     },

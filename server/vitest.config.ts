@@ -13,6 +13,15 @@ export default defineConfig({
     // One database, so integration test files must not run at the same time.
     fileParallelism: false,
     globalSetup: testDb ? ["./test/globalSetup.ts"] : [],
-    env: testDb ? { DATABASE_URL: testDb, NODE_ENV: "test" } : {},
+    env: {
+      ...(testDb ? { DATABASE_URL: testDb, NODE_ENV: "test" } : {}),
+      // Tests run at any hour; equal start and end turns quiet hours off. Quiet hours have their own unit test.
+      QUIET_HOURS_START: "00:00",
+      QUIET_HOURS_END: "00:00",
+      MIN_CLIENT_VERSION: "100",
+      // Real channels stay off; tests install fakes.
+      VAPID_PUBLIC_KEY: "",
+      DISCORD_WEBHOOK_URL: "",
+    },
   },
 });

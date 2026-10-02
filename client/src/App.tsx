@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { AdminPage, MembersTab } from "./pages/AdminPage";
 import { AdminRacePage } from "./pages/AdminRacePage";
 import { AdminRacesTab } from "./pages/AdminRacesTab";
+import { DraftPage } from "./pages/DraftPage";
 import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { ComingSoon } from "./pages/ComingSoon";
@@ -23,7 +24,7 @@ export function App() {
         }
       >
         <Route index element={<HomePage />} />
-        <Route path="draft/:raceId?" element={<ComingSoon title="Draft room" phase={4} />} />
+        <Route path="draft/:raceId?" element={<DraftPage />} />
         <Route path="live/:raceId?" element={<ComingSoon title="Live race" phase={5} />} />
         <Route path="history" element={<ComingSoon title="Past weeks" phase={6} />} />
         <Route path="season/:seasonId?" element={<ComingSoon title="Season stats" phase={7} />} />

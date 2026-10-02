@@ -4,6 +4,8 @@ import { Navigate, useLocation, useNavigate } from "react-router";
 import { api } from "../api";
 import { useMe, useSetMe } from "../auth";
 import { PhoneInput } from "../components/PhoneInput";
+import { InstallSteps } from "../components/PushSetup";
+import { isIos, isStandalone } from "../pwa";
 
 export function LoginPage() {
   const { data: me } = useMe();
@@ -34,6 +36,17 @@ export function LoginPage() {
     <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
       <h1 className="mb-1 text-3xl font-bold">Draft &amp; Draft</h1>
       <p className="mb-8 text-slate-400">Weekly NASCAR fantasy for the league.</p>
+
+      {isIos() && !isStandalone() && (
+        // Install first: the Home Screen app has its own cookie jar, so a Safari login doesn't carry over.
+        <div className="card mb-6 flex flex-col gap-3 border-sky-800">
+          <div className="font-semibold">On iPhone? Install the app first.</div>
+          <p className="text-sm text-slate-400">
+            Turn notifications only reach the Home Screen app, and it keeps its own login.
+          </p>
+          <InstallSteps />
+        </div>
+      )}
 
       <form onSubmit={submit} className="flex flex-col gap-4">
         <div>

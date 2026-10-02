@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../api";
 import { useMe, useSetMe } from "../auth";
+import { PushSetup } from "../components/PushSetup";
 
 export function SettingsPage() {
   const { data: me } = useMe();
@@ -29,7 +30,9 @@ export function SettingsPage() {
       <div className="card flex items-center justify-between gap-4">
         <div>
           <div className="font-semibold">Notifications</div>
-          <div className="text-sm text-slate-400">Turn alerts and reminders. Push setup arrives in Phase 4.</div>
+          <div className="text-sm text-slate-400">
+            Turn alerts and reminders, on every device and in Discord. League-wide announcements still post to Discord.
+          </div>
         </div>
         <button
           type="button"
@@ -39,6 +42,11 @@ export function SettingsPage() {
         >
           {me.notificationsEnabled ? "On" : "Off"}
         </button>
+      </div>
+
+      <div className="card flex flex-col gap-3">
+        <div className="font-semibold">This device</div>
+        <PushSetup />
       </div>
 
       <div className="card">

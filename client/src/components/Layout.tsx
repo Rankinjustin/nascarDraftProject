@@ -1,6 +1,9 @@
-import { CalendarRange, Flag, House, ListOrdered, Settings, Shield, type LucideIcon } from "lucide-react";
+import { CalendarRange, Flag, House, ListOrdered, RefreshCw, Settings, Shield, type LucideIcon } from "lucide-react";
+import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router";
+import { api } from "../api";
 import { useMe } from "../auth";
+import { applyUpdate, currentPushSubscription, useUpdateAvailable } from "../pwa";
 
 interface Tab {
   to: string;
@@ -23,6 +26,20 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
 /** Bottom tab bar on mobile, sidebar from md: up (SPEC Section 11). */
 export function Layout() {
   const { data: me } = useMe();
+  const updateAvailable = useUpdateAvailable();
+
+  // A device subscribed under someone else's login moves to whoever is logged in now (upsert on endpoint).
+  useEffect(() => {
+    if (!me) return;
+    void currentPushSubscription()
+      .then((sub) => {
+        const keys = sub?.toJSON().keys;
+        if (sub && keys?.p256dh && keys.auth) {
+          return api.subscribePush({ endpoint: sub.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } });
+        }
+      })
+      .catch(() => undefined);
+  }, [me?.id]);
   const extra: Tab[] = [
     { to: "/settings", label: "Settings", icon: Settings },
     ...(me?.role === "COMMISSIONER" ? [{ to: "/admin", label: "Admin", icon: Shield }] : []),
@@ -58,6 +75,18 @@ export function Layout() {
             ))}
           </div>
         </header>
+
+        {updateAvailable && (
+          // Never reloads on its own: someone may be mid-pick.
+          <button
+            type="button"
+            onClick={applyUpdate}
+            className="flex min-h-11 items-center justify-center gap-2 bg-sky-700 px-4 text-sm font-semibold text-white"
+          >
+            <RefreshCw size={16} />
+            New version available — tap to reload
+          </button>
+        )}
 
         <main className="flex-1 px-4 pb-24 pt-4 md:pb-8">
           <Outlet />

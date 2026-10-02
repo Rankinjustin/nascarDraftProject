@@ -3,9 +3,12 @@
  */
 import type {
   ApiErrorBody,
+  DraftEventView,
+  DraftState,
   DriverView,
   EntryUpdateResult,
   PublicUser,
+  PushSubscriptionInput,
   RaceDetail,
   RaceEntryView,
   RaceSummary,
@@ -14,6 +17,7 @@ import type {
 } from "@dnd/shared";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
+export const APP_VERSION: string = import.meta.env.VITE_APP_VERSION;
 
 export class ApiError extends Error {
   constructor(
@@ -25,15 +29,38 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The server refused this build (426, SPEC Section 11 "Version floor"): fetch the new service worker and reload.
+ * Guarded so a server misconfiguration can't put the app in a reload loop.
+ */
+async function forceReload(): Promise<void> {
+  const KEY = "dnd:forcedReloadAt";
+  try {
+    const last = Number(sessionStorage.getItem(KEY) ?? 0);
+    if (Date.now() - last < 60_000) return;
+    sessionStorage.setItem(KEY, String(Date.now()));
+  } catch {
+    // Storage unavailable: reload anyway.
+  }
+  const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined);
+  await registration?.update().catch(() => undefined);
+  registration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+  window.location.reload();
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
     credentials: "include",
-    // Every mutating request is JSON, even with no body — the server's CSRF guard requires it.
-    headers: method === "GET" ? undefined : { "Content-Type": "application/json" },
+    headers: {
+      "X-App-Version": APP_VERSION,
+      // Every mutating request is JSON, even with no body — the server's CSRF guard requires it.
+      ...(method === "GET" ? {} : { "Content-Type": "application/json" }),
+    },
     body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
   });
   if (res.status === 204) return undefined as T;
+  if (res.status === 426) void forceReload();
 
   const data: unknown = await res.json().catch(() => null);
   if (!res.ok) {
@@ -98,4 +125,20 @@ export const api = {
     request<EntryUpdateResult>("PATCH", `/races/${raceId}/entries/${entryId}`, body),
   deleteEntry: (raceId: string, entryId: string) =>
     request<void>("DELETE", `/races/${raceId}/entries/${entryId}`),
+
+  getDraft: (raceId: string) => request<DraftState>("GET", `/races/${raceId}/draft`),
+  spinWheel: (raceId: string, userIds?: string[]) =>
+    request<DraftState>("POST", `/races/${raceId}/draft-order`, userIds ? { userIds } : {}),
+  makePick: (raceId: string, body: { driverId: string; overallPickNumber: number; onBehalfOfUserId?: string }) =>
+    request<DraftState>("POST", `/races/${raceId}/picks`, body),
+  revertLastPick: (raceId: string) => request<DraftState>("DELETE", `/races/${raceId}/picks/last`),
+  swapPick: (raceId: string, overallPickNumber: number, driverId: string) =>
+    request<DraftState>("PUT", `/races/${raceId}/picks/${overallPickNumber}`, { driverId }),
+  resetDraft: (raceId: string) => request<DraftState>("POST", `/races/${raceId}/draft/reset`),
+  regenerateOrder: (raceId: string) => request<DraftState>("POST", `/races/${raceId}/draft/regenerate`),
+  listEvents: (raceId: string) => request<DraftEventView[]>("GET", `/races/${raceId}/events`),
+
+  subscribePush: (subscription: PushSubscriptionInput) => request<void>("POST", "/notifications/subscribe", subscription),
+  unsubscribePush: (endpoint: string) => request<void>("DELETE", "/notifications/subscribe", { endpoint }),
+  testPush: () => request<{ devices: number }>("POST", "/notifications/test"),
 };

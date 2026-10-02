@@ -95,3 +95,66 @@ export interface EntryUpdateResult {
   /** Set when a drafted driver was marked ineligible: the commissioner should swap that pick. */
   warning: string | null;
 }
+
+// Draft (SPEC Sections 6 and 10).
+
+export interface DraftPickView extends PickView {
+  displayName: string;
+  driverName: string;
+  carNumber: string;
+  createdByName: string;
+  /** The driver's entry was struck after the pick; the commissioner should swap it. */
+  isWithdrawn: boolean;
+}
+
+export interface AvailableDriver {
+  driverId: string;
+  driverName: string;
+  carNumber: string;
+  teamName: string | null;
+  /** From QualifyingResult, once the grid is captured. */
+  startPosition: number | null;
+  /** Finish in the most recent completed race, when known. */
+  lastFinish: number | null;
+}
+
+/** GET /races/:id/draft, and the response to every draft write. */
+export interface DraftState {
+  race: RaceSummary;
+  order: DraftOrderView[];
+  /** One userId per slot, in pick order. */
+  snake: string[];
+  picks: DraftPickView[];
+  onTheClock: { userId: string; displayName: string } | null;
+  nextOverallPickNumber: number | null;
+  totalSlots: number;
+  /** ISO; picks close at the published race start time. */
+  deadline: string;
+  /** Eligible, undrafted drivers. */
+  availableDrivers: AvailableDriver[];
+}
+
+export type DraftEventType =
+  | "ORDER_GENERATED"
+  | "ORDER_REGENERATED"
+  | "PICK_MADE"
+  | "PICK_MADE_ON_BEHALF"
+  | "PICK_REVERTED"
+  | "PICK_SWAPPED"
+  | "DRAFT_RESET"
+  | "STATUS_CHANGED"
+  | "RESULTS_CORRECTED";
+
+export interface DraftEventView {
+  id: string;
+  type: DraftEventType;
+  /** null = the system (deadline job, poller). */
+  actorName: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface PushSubscriptionInput {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
