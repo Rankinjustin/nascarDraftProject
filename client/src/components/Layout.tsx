@@ -1,4 +1,4 @@
-import { CalendarRange, Flag, House, ListOrdered, RefreshCw, Settings, Shield, type LucideIcon } from "lucide-react";
+import { CalendarRange, Flag, History, House, ListOrdered, RefreshCw, Settings, Shield, type LucideIcon } from "lucide-react";
 import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router";
 import { api } from "../api";
@@ -41,6 +41,7 @@ export function Layout() {
       .catch(() => undefined);
   }, [me?.id]);
   const extra: Tab[] = [
+    { to: "/history", label: "Past weeks", icon: History },
     { to: "/settings", label: "Settings", icon: Settings },
     ...(me?.role === "COMMISSIONER" ? [{ to: "/admin", label: "Admin", icon: Shield }] : []),
   ];

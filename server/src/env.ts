@@ -23,6 +23,10 @@ const schema = z.object({
   VAPID_SUBJECT: optional(z.string()),
   DISCORD_WEBHOOK_URL: optional(z.string().url()),
 
+  NASCAR_FEED_BASE_URL: z.string().url().default("https://cf.nascar.com"),
+  // Kill switch for the live-feed poller. Only the exact string "true" turns it on.
+  FEED_POLL_ENABLED: z.preprocess((v) => v === "true", z.boolean()),
+
   LEAGUE_TIMEZONE: z.string().default("America/Chicago"),
   // Equal start and end means no quiet hours.
   QUIET_HOURS_START: clock.default("22:00"),

@@ -1,8 +1,10 @@
 import type { Driver, RaceEntry } from "@prisma/client";
-import type { DriverView, EntryUpdateResult, RaceEntryView } from "@dnd/shared";
+import type { DriverView, EntryImportResult, EntryUpdateResult, RaceEntryView } from "@dnd/shared";
 import { prisma } from "../db";
 import { HttpError, notFound } from "../errors";
+import { fetchEntryList, type FeedEntry, type FetchRaw } from "../integrations/nascarFeed";
 import { withRaceLock, type Tx } from "../races/lock";
+import { resolveDrivers } from "./feedDrivers";
 
 export function byCarNumber(a: { carNumber: string }, b: { carNumber: string }): number {
   return a.carNumber.localeCompare(b.carNumber, undefined, { numeric: true });
@@ -132,5 +134,54 @@ export async function deleteEntry(raceId: string, entryId: string): Promise<void
       );
     }
     await tx.raceEntry.delete({ where: { id: entryId } });
+  });
+}
+
+/**
+ * POST /races/:id/entries/import — the entry list from NASCAR's cacher weekend feed, which is populated a couple of
+ * days before the race. Adds missing entries and updates car numbers that changed. Nothing is removed: withdrawals
+ * are the commissioner's call.
+ */
+export async function importEntries(raceId: string, fetcher?: FetchRaw): Promise<EntryImportResult> {
+  const race = await prisma.race.findUnique({ where: { id: raceId }, include: { season: true } });
+  if (!race) throw notFound("Race");
+  if (race.nascarRaceId === null) {
+    throw new HttpError(409, "NO_NASCAR_RACE_ID", "Set the race's NASCAR race ID before importing its entry list.");
+  }
+
+  let list: FeedEntry[];
+  try {
+    list = await fetchEntryList(race.season.year, race.season.seriesId, race.nascarRaceId, fetcher);
+  } catch (err) {
+    console.warn("[entries] entry-list import failed:", err instanceof Error ? err.message : err);
+    throw new HttpError(502, "FEED_UNAVAILABLE", "NASCAR's feed didn't return an entry list. Try again later, or add entries by hand.");
+  }
+  if (list.length === 0) {
+    throw new HttpError(409, "NO_ENTRY_LIST", "NASCAR hasn't published the entry list for this race yet.");
+  }
+
+  return withRaceLock(raceId, async (tx) => {
+    const drivers = await resolveDrivers(tx, raceId, list);
+    const existing = new Map((await tx.raceEntry.findMany({ where: { raceId } })).map((e) => [e.driverId, e]));
+    const handled = new Set<string>();
+    let added = 0;
+    let updated = 0;
+    for (const [i, car] of list.entries()) {
+      const driver = drivers[i]!;
+      if (handled.has(driver.id)) continue;
+      handled.add(driver.id);
+      const entry = existing.get(driver.id);
+      if (!entry) {
+        await tx.raceEntry.create({ data: { raceId, driverId: driver.id, carNumber: car.carNumber } });
+        added += 1;
+      } else if (entry.carNumber !== car.carNumber) {
+        await tx.raceEntry.update({ where: { id: entry.id }, data: { carNumber: car.carNumber } });
+        updated += 1;
+      }
+      if (driver.carNumber !== car.carNumber || (car.teamName && driver.teamName !== car.teamName)) {
+        await tx.driver.update({ where: { id: driver.id }, data: { carNumber: car.carNumber, teamName: car.teamName ?? driver.teamName } });
+      }
+    }
+    return { entries: await entriesFor(tx, raceId), added, updated };
   });
 }

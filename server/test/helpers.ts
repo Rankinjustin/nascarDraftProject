@@ -5,6 +5,7 @@ import { createApp } from "../src/app";
 import { hashToken, newToken } from "../src/auth/tokens";
 import { prisma } from "../src/db";
 import { env } from "../src/env";
+import type { ChannelKey, NotificationChannel, NotificationPayload } from "../src/notifications/types";
 
 export const hasTestDb = Boolean(process.env.TEST_DATABASE_URL);
 export { prisma };
@@ -98,3 +99,33 @@ export async function call<T = any>(
   const text = await res.text();
   return { status: res.status, body: text ? JSON.parse(text) : undefined };
 }
+
+export interface FakeChannel extends NotificationChannel {
+  sent: NotificationPayload[];
+  attempts: NotificationPayload[];
+  failUsers: Set<string | null>;
+  delayMs: number;
+}
+
+export function fakeChannel(key: ChannelKey = "web_push", broadcastAsOne = false): FakeChannel {
+  const channel: FakeChannel = {
+    key,
+    broadcastAsOne,
+    sent: [],
+    attempts: [],
+    failUsers: new Set(),
+    delayMs: 0,
+    async canReach(p) {
+      return broadcastAsOne || p.userId !== null;
+    },
+    async send(p) {
+      channel.attempts.push(p);
+      if (channel.delayMs) await new Promise((r) => setTimeout(r, channel.delayMs));
+      if (channel.failUsers.has(p.userId)) throw new Error("push service said no");
+      channel.sent.push(p);
+    },
+  };
+  return channel;
+}
+
+export const ofKind = (list: NotificationPayload[], kind: string) => list.filter((p) => p.kind === kind);

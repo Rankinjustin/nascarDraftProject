@@ -2,6 +2,7 @@ import { ROUNDS, snakeOrder, whoseTurn } from "@dnd/shared";
 import { prisma } from "../db";
 import { env } from "../env";
 import { notify, retryRow } from "../notifications/notify";
+import { nextMorning } from "../notifications/quietHours";
 import { BROADCAST_KINDS } from "../notifications/types";
 
 const HOUR = 60 * 60 * 1000;
@@ -57,7 +58,17 @@ export async function runSweeper(now = new Date()): Promise<void> {
     }
   }
 
-  // 5. complete_reminder arrives with race completion (Phase 6).
+  // 5. Races still LIVE after the finish: remind the commissioners to complete them (held during quiet hours).
+  const live = await prisma.race.findMany({ where: { status: "LIVE" } });
+  for (const race of live) {
+    const first = race.checkeredSeenAt
+      ? new Date(race.checkeredSeenAt.getTime() + HOUR)
+      : new Date(race.raceDate.getTime() + 6 * HOUR);
+    const followUp = nextMorning(race.raceDate, env.LEAGUE_TIMEZONE);
+    // overallPickNumber is the reminder's sequence number here, which lets the ledger allow exactly two.
+    if (now >= first) await notify({ raceId: race.id, kind: "complete_reminder", overallPickNumber: 1, to: "commissioners" }, now);
+    if (now >= first && now >= followUp) await notify({ raceId: race.id, kind: "complete_reminder", overallPickNumber: 2, to: "commissioners" }, now);
+  }
 
   // 6. Broadcast rows that failed (per-user web-push rows and Discord BROADCAST rows).
   const failed = await prisma.notificationLog.findMany({

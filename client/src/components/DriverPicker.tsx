@@ -1,12 +1,8 @@
 import type { AvailableDriver } from "@dnd/shared";
 import { Search } from "lucide-react";
 import { useState } from "react";
+import { ordinal } from "../format";
 
-function ordinal(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
-}
 
 /**
  * Single scrollable column with search (SPEC Section 11). The server sorts it: starting position once

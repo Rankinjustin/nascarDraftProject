@@ -158,3 +158,162 @@ export interface PushSubscriptionInput {
   endpoint: string;
   keys: { p256dh: string; auth: string };
 }
+
+// Live race and qualifying (SPEC Sections 7 and 11).
+
+export type FeedSessionType = "practice" | "qualifying" | "race" | "unknown";
+
+export interface QualifyingView {
+  driverId: string;
+  driverName: string;
+  carNumber: string;
+  startPosition: number;
+  /** null when rained out or the lineup was set by formula. */
+  qualifyingTime: number | null;
+  qualifyingSpeed: number | null;
+  isPole: boolean;
+  source: "feed" | "manual";
+}
+
+export interface LiveDriverRow {
+  driverId: string;
+  driverName: string;
+  carNumber: string;
+  /** Current position: runningPosition while live, finishPosition once completed. */
+  position: number | null;
+  startPosition: number | null;
+  /** start − current: positive = positions gained. null without both. */
+  change: number | null;
+  lapsCompleted: number;
+  status: string;
+  ownerUserId: string | null;
+  ownerName: string | null;
+}
+
+export interface RosterSlot {
+  /** null = empty slot (the draft closed before it was filled). */
+  driverId: string | null;
+  driverName: string | null;
+  carNumber: string | null;
+  startPosition: number | null;
+  position: number | null;
+  isWithdrawn: boolean;
+}
+
+export interface FantasyStanding {
+  userId: string;
+  displayName: string;
+  pickPosition: number;
+  /** null before any results exist. */
+  score: number | null;
+  rank: number | null;
+  avgStart: number | null;
+  avgCurrent: number | null;
+  drivers: RosterSlot[];
+}
+
+/** GET /races/:id/live — both halves of the race page in one poll. */
+export interface LiveView {
+  race: RaceSummary & {
+    currentLap: number | null;
+    totalLaps: number | null;
+    flagState: number | null;
+    feedUpdatedAt: string | null;
+    checkeredSeenAt: string | null;
+  };
+  /** The poller's last feed, only when it's for this race. null after a restart or for another race. */
+  feed: {
+    sessionType: FeedSessionType;
+    flagState: number | null;
+    currentLap: number | null;
+    totalLaps: number | null;
+    fetchedAt: string;
+  } | null;
+  /** The last feed fetch failed; `feed` is the last good copy. */
+  stale: boolean;
+  fieldSize: number;
+  qualifying: QualifyingView[];
+  runningOrder: LiveDriverRow[];
+  fantasyStandings: FantasyStanding[];
+}
+
+export interface EntryImportResult {
+  entries: RaceEntryView[];
+  added: number;
+  updated: number;
+}
+
+// Completion, history, and season stats (SPEC Sections 8 and 12, Phases 6–7).
+
+/** One roster slot in a frozen week. An empty slot has driverId null and driverName "No pick". */
+export interface DriverFinish {
+  driverId: string | null;
+  driverName: string;
+  carNumber: string | null;
+  finishPosition: number | null;
+}
+
+export interface WeeklyResultView {
+  userId: string;
+  displayName: string;
+  score: number;
+  /** Ties share a rank; every rank-1 row is a weekly winner. */
+  rank: number;
+  scoringRuleKey: string;
+  fieldSize: number;
+  driverFinishes: DriverFinish[];
+}
+
+/** GET /races/:id/standings */
+export type StandingsView =
+  | { final: true; results: WeeklyResultView[] }
+  | { final: false; projected: FantasyStanding[] };
+
+export interface HistoryWeek {
+  race: RaceSummary;
+  results: WeeklyResultView[];
+}
+
+export interface WeekRef {
+  raceId: string;
+  raceName: string;
+  score: number;
+  rank: number;
+}
+
+export interface UserSeasonStats {
+  userId: string;
+  displayName: string;
+  weeksPlayed: number;
+  /** Count of rank-1 weeks, so a tie is a win for each co-winner. */
+  wins: number;
+  avgScore: number | null;
+  bestWeek: WeekRef | null;
+  worstWeek: WeekRef | null;
+  driversDrafted: number;
+  /** Share of this user's drafted drivers who finished in the top 10; null with no drafted drivers. */
+  top10Rate: number | null;
+}
+
+export interface DraftedDriverStats {
+  driverId: string;
+  driverName: string;
+  carNumber: string | null;
+  timesDrafted: number;
+  avgFinish: number | null;
+}
+
+/** GET /seasons/:id/stats — read only from WeeklyResult snapshots. */
+export interface SeasonStats {
+  season: SeasonView;
+  weeksCompleted: number;
+  users: UserSeasonStats[];
+  mostDrafted: DraftedDriverStats[];
+}
+
+export interface ResultInput {
+  driverId: string;
+  finishPosition: number;
+  lapsCompleted?: number;
+  status?: string;
+}

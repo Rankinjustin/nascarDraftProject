@@ -11,7 +11,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "capture:feed": "tsx --env-file=.env scripts/capture-feed.ts"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"

@@ -6,3 +6,4 @@ dist/
 coverage/
 server/prisma/seed-data/users.json
 .vercel/
+server/test/fixtures/capture/

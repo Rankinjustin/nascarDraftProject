@@ -1,5 +1,7 @@
 import cron from "node-cron";
+import { env } from "../env";
 import { runDeadlineJob } from "./deadline";
+import { runPoller } from "./poller";
 import { recordJobRun, registerJob } from "./registry";
 import { runSweeper } from "./sweeper";
 
@@ -27,4 +29,6 @@ function schedule(name: string, expression: string, intervalMs: number, run: () 
 export function startJobs(): void {
   schedule("deadline", "* * * * *", 60_000, () => runDeadlineJob());
   schedule("sweeper", "*/5 * * * *", 5 * 60_000, () => runSweeper());
+  if (env.FEED_POLL_ENABLED) schedule("poller", "*/20 * * * * *", 20_000, () => runPoller());
+  else console.log("Live-feed poller is off (FEED_POLL_ENABLED is not true).");
 }

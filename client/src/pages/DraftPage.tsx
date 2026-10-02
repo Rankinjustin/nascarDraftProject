@@ -1,11 +1,12 @@
 import { roundForPick, ROUNDS, type DraftState, type PublicUser } from "@dnd/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, Navigate, useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { api, ApiError } from "../api";
 import { useMe } from "../auth";
 import { AuditLog } from "../components/AuditLog";
 import { CommishPanel } from "../components/CommishPanel";
+import { CurrentRaceRedirect } from "../components/CurrentRaceRedirect";
 import { DraftBoard } from "../components/DraftBoard";
 import { DriverPicker } from "../components/DriverPicker";
 import { StatusBadge } from "../components/StatusBadge";
@@ -14,15 +15,9 @@ import { formatRaceDate, formatTime, timeUntil } from "../dates";
 
 export const draftKey = (raceId: string) => ["draft", raceId] as const;
 
-/** /draft with no id opens the race in focus. */
 export function DraftPage() {
   const { raceId } = useParams();
-  const current = useQuery({ queryKey: ["race", "current"], queryFn: api.currentRace, enabled: !raceId });
-  if (raceId) return <DraftRoom key={raceId} raceId={raceId} />;
-  if (current.isPending) return <p className="text-slate-400">Loading…</p>;
-  if (current.isError) return <p className="text-red-400">{current.error.message}</p>;
-  if (!current.data) return <p className="text-slate-400">No race on the schedule.</p>;
-  return <Navigate to={`/draft/${current.data.id}`} replace />;
+  return raceId ? <DraftRoom key={raceId} raceId={raceId} /> : <CurrentRaceRedirect basePath="/draft" />;
 }
 
 /** Polls every 3s, or 10s while it's your turn — you're the one acting (SPEC Section 6, "Polling"). */

@@ -2,10 +2,12 @@ import { TRANSITIONS, type TransitionReason } from "@dnd/shared";
 import { Router } from "express";
 import { z } from "zod";
 import { currentUser, requireAuth, requireCommissioner } from "../auth/sessions";
+import { listHistory } from "../services/completion";
 import {
   addEntries,
   copyEntriesFrom,
   deleteEntry,
+  importEntries,
   listEntries,
   updateEntry,
 } from "../services/entries";
@@ -83,6 +85,12 @@ racesRouter.get("/current", requireAuth, async (_req, res) => {
   res.json(await getCurrentRace());
 });
 
+// Completed weeks with their frozen results, newest first. Before /:id so "history" isn't read as a race id.
+racesRouter.get("/history", requireAuth, async (req, res) => {
+  const { seasonId } = z.object({ seasonId: id.optional() }).parse(req.query);
+  res.json(await listHistory(seasonId));
+});
+
 racesRouter.get("/:id", requireAuth, async (req, res) => {
   const { id } = raceParams.parse(req.params);
   res.json(await getRaceDetail(id));
@@ -111,6 +119,11 @@ racesRouter.get("/:id/entries", requireAuth, async (req, res) => {
 racesRouter.post("/:id/entries", requireCommissioner, async (req, res) => {
   const { id } = raceParams.parse(req.params);
   res.status(201).json(await addEntries(id, addEntriesBody.parse(req.body)));
+});
+
+racesRouter.post("/:id/entries/import", requireCommissioner, async (req, res) => {
+  const { id } = raceParams.parse(req.params);
+  res.json(await importEntries(id));
 });
 
 racesRouter.post("/:id/entries/copy-from", requireCommissioner, async (req, res) => {

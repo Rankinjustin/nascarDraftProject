@@ -5,9 +5,12 @@ import { AdminPage, MembersTab } from "./pages/AdminPage";
 import { AdminRacePage } from "./pages/AdminRacePage";
 import { AdminRacesTab } from "./pages/AdminRacesTab";
 import { DraftPage } from "./pages/DraftPage";
+import { HistoryPage } from "./pages/HistoryPage";
 import { HomePage } from "./pages/HomePage";
+import { LivePage } from "./pages/LivePage";
 import { LoginPage } from "./pages/LoginPage";
 import { ComingSoon } from "./pages/ComingSoon";
+import { SeasonPage } from "./pages/SeasonPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 
@@ -25,9 +28,9 @@ export function App() {
       >
         <Route index element={<HomePage />} />
         <Route path="draft/:raceId?" element={<DraftPage />} />
-        <Route path="live/:raceId?" element={<ComingSoon title="Live race" phase={5} />} />
-        <Route path="history" element={<ComingSoon title="Past weeks" phase={6} />} />
-        <Route path="season/:seasonId?" element={<ComingSoon title="Season stats" phase={7} />} />
+        <Route path="live/:raceId?" element={<LivePage />} />
+        <Route path="history" element={<HistoryPage />} />
+        <Route path="season/:seasonId?" element={<SeasonPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route
           path="admin"

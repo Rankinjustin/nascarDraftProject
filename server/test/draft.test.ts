@@ -3,15 +3,16 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { runDeadlineJob } from "../src/jobs/deadline";
 import { runSweeper } from "../src/jobs/sweeper";
 import { notify, setChannels, settleNotifications } from "../src/notifications/notify";
-import type { ChannelKey, NotificationChannel, NotificationPayload } from "../src/notifications/types";
 import { env } from "../src/env";
 import {
   call,
+  fakeChannel,
   hasTestDb,
   makeDrivers,
   makeRace,
   makeSeason,
   makeUser,
+  ofKind,
   prisma,
   resetDb,
   startServer,
@@ -21,38 +22,9 @@ import {
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
-interface FakeChannel extends NotificationChannel {
-  sent: NotificationPayload[];
-  attempts: NotificationPayload[];
-  failUsers: Set<string | null>;
-  delayMs: number;
-}
-
-function fakeChannel(key: ChannelKey = "web_push", broadcastAsOne = false): FakeChannel {
-  const channel: FakeChannel = {
-    key,
-    broadcastAsOne,
-    sent: [],
-    attempts: [],
-    failUsers: new Set(),
-    delayMs: 0,
-    async canReach(p) {
-      return broadcastAsOne || p.userId !== null;
-    },
-    async send(p) {
-      channel.attempts.push(p);
-      if (channel.delayMs) await new Promise((r) => setTimeout(r, channel.delayMs));
-      if (channel.failUsers.has(p.userId)) throw new Error("push service said no");
-      channel.sent.push(p);
-    },
-  };
-  return channel;
-}
-
-const ofKind = (list: NotificationPayload[], kind: string) => list.filter((p) => p.kind === kind);
 
 describe.skipIf(!hasTestDb)("draft (integration)", () => {
-  let push: FakeChannel;
+  let push: ReturnType<typeof fakeChannel>;
 
   beforeAll(startServer);
   afterAll(stopServer);

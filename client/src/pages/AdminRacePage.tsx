@@ -12,6 +12,7 @@ import { ArrowLeft, Search, Trash2 } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router";
 import { api } from "../api";
+import { ResultsPanel } from "../components/ResultsPanel";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatRaceDate, fromDatetimeLocal, toDatetimeLocal } from "../dates";
 import { racesKey } from "./AdminRacesTab";
@@ -21,6 +22,7 @@ const raceKey = (id: string) => ["race", id] as const;
 export function AdminRacePage() {
   const { raceId = "" } = useParams();
   const race = useQuery({ queryKey: raceKey(raceId), queryFn: () => api.getRace(raceId) });
+  const invalidate = useRaceInvalidation(raceId);
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -45,9 +47,11 @@ export function AdminRacePage() {
             </Link>
           </div>
           <StatusPanel race={race.data} />
+          <ResultsPanel race={race.data} onChanged={invalidate} />
           {/* Keyed so the form resets to the saved values after another commissioner's edit lands. */}
           <DetailsForm key={`${race.data.raceDate}|${race.data.raceName}`} race={race.data} />
           <EntriesPanel race={race.data} />
+          <QualifyingPanel race={race.data} />
         </>
       )}
     </div>
@@ -260,11 +264,12 @@ function EntriesPanel({ race }: { race: RaceDetail }) {
   const notEntered = (drivers.data ?? []).filter((d) => d.isActive && !entered.has(d.id));
 
   const copy = useMutation({ mutationFn: () => api.copyEntries(race.id, chosenSource), onSuccess: invalidate });
+  const importFeed = useMutation({ mutationFn: () => api.importEntries(race.id), onSuccess: invalidate });
   const addAll = useMutation({
     mutationFn: () => api.addEntries(race.id, notEntered.map((d) => d.id)),
     onSuccess: invalidate,
   });
-  const error = copy.error ?? addAll.error;
+  const error = copy.error ?? addAll.error ?? importFeed.error;
   const eligible = race.entries.filter((e) => e.isEligible).length;
 
   return (
@@ -277,6 +282,25 @@ function EntriesPanel({ race }: { race: RaceDetail }) {
       </div>
 
       <div className="card flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={importFeed.isPending || race.nascarRaceId === null}
+            onClick={() => importFeed.mutate()}
+          >
+            {importFeed.isPending ? "Importing…" : "Import entry list from NASCAR"}
+          </button>
+          {race.nascarRaceId === null && (
+            <p className="text-xs text-slate-500">Set the NASCAR race ID under Race details to import.</p>
+          )}
+          {importFeed.isSuccess && (
+            <p className="text-sm text-green-400">
+              Added {importFeed.data.added}, updated {importFeed.data.updated} car number
+              {importFeed.data.updated === 1 ? "" : "s"}. Nothing is removed — withdraw anyone who isn't running.
+            </p>
+          )}
+        </div>
         {sources.length > 0 && (
           <div className="flex flex-col gap-2">
             <span className="label">Copy eligible entries from another race</span>
@@ -485,5 +509,76 @@ function NewDriverForm({ raceId, onDone, onAdded }: { raceId: string; onDone: ()
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Manual starting lineup (SPEC Section 7): the fallback when the feed's qualifying window was missed, or for a
+ * rain-out where the lineup is set by formula. Replaces the whole grid and stops the feed from overwriting it.
+ */
+function QualifyingPanel({ race }: { race: RaceDetail }) {
+  const queryClient = useQueryClient();
+  const grid = useQuery({ queryKey: ["qualifying", race.id], queryFn: () => api.getQualifying(race.id) });
+  const [text, setText] = useState("");
+
+  // One car number per line, pole first. Car numbers map through this race's entries.
+  const byCar = new Map(race.entries.map((e) => [e.carNumber, e]));
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim().replace(/^#/, ""))
+    .filter(Boolean);
+  const unmatched = lines.filter((l) => !byCar.has(l));
+  const duplicates = lines.filter((l, i) => lines.indexOf(l) !== i);
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.setQualifying(
+        race.id,
+        lines.map((car, i) => ({ driverId: byCar.get(car)!.driverId, startPosition: i + 1 })),
+      ),
+    onSuccess: (rows) => {
+      queryClient.setQueryData(["qualifying", race.id], rows);
+      setText("");
+    },
+  });
+
+  const rows = grid.data ?? [];
+  return (
+    <section className="card flex flex-col gap-3">
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-semibold">Starting lineup</h2>
+        <span className="text-sm text-slate-400">
+          {rows.length === 0 ? "Not captured yet" : `${rows.length} cars · ${rows[0]!.source === "manual" ? "entered by hand" : "from the feed"}`}
+        </span>
+      </div>
+      {rows.length > 0 && (
+        <ol className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+          {rows.map((q) => (
+            <li key={q.driverId} className="truncate">
+              <span className="inline-block w-7 text-right text-slate-500">{q.startPosition}.</span>{" "}
+              <span className="font-mono text-slate-400">#{q.carNumber}</span> {q.driverName}
+            </li>
+          ))}
+        </ol>
+      )}
+      <label>
+        <span className="label">Paste the lineup: one car number per line, pole first</span>
+        <textarea className="input min-h-32 py-2 font-mono" value={text} onChange={(e) => setText(e.target.value)} />
+      </label>
+      {unmatched.length > 0 && (
+        <p className="text-sm text-amber-300">Not in this race's entries: {[...new Set(unmatched)].map((c) => `#${c}`).join(", ")}</p>
+      )}
+      {duplicates.length > 0 && <p className="text-sm text-amber-300">Listed twice: {[...new Set(duplicates)].map((c) => `#${c}`).join(", ")}</p>}
+      {save.isError && <p className="text-sm text-red-400">{save.error.message}</p>}
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={lines.length === 0 || unmatched.length > 0 || duplicates.length > 0 || save.isPending}
+        onClick={() => save.mutate()}
+      >
+        {lines.length ? `Save lineup (${lines.length} cars)` : "Save lineup"}
+      </button>
+      <p className="text-xs text-slate-500">Saving replaces the whole grid. The feed won't overwrite a lineup entered here.</p>
+    </section>
   );
 }

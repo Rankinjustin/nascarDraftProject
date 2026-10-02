@@ -20,6 +20,13 @@ export function AdminRacesTab() {
   // A race stays in the main list until it's completed, so nothing in progress gets hidden.
   const isPast = (r: RaceSummary) => r.status === "COMPLETED" || (r.status === "UPCOMING" && Date.parse(r.raceDate) < now);
   const stale = all.filter((r) => r.status === "LIVE" && now - Date.parse(r.raceDate) > STALE_LIVE_MS);
+  // The poller ignores a race without its NASCAR id: no live results, no qualifying capture (SPEC Section 7).
+  const missingFeedId = all.filter(
+    (r) =>
+      (r.status === "DRAFTING" || r.status === "LOCKED") &&
+      r.nascarRaceId === null &&
+      Date.parse(r.raceDate) - now < 3 * STALE_LIVE_MS,
+  );
   const shown = showPast ? all : all.filter((r) => !isPast(r));
 
   return (
@@ -31,6 +38,18 @@ export function AdminRacesTab() {
             <div className="font-semibold text-amber-200">Complete this race</div>
             <div className="text-sm text-slate-300">
               {r.raceName} is still live a day after it started. Until it's completed it can hide next week's draft.
+            </div>
+          </div>
+        </Link>
+      ))}
+
+      {missingFeedId.map((r) => (
+        <Link key={r.id} to={`/admin/races/${r.id}`} className="card flex items-start gap-3 border-amber-700">
+          <AlertTriangle className="mt-0.5 shrink-0 text-amber-400" size={20} />
+          <div>
+            <div className="font-semibold text-amber-200">Set the NASCAR race ID</div>
+            <div className="text-sm text-slate-300">
+              {r.raceName} has no NASCAR race ID, so the live feed won't capture qualifying or results for it.
             </div>
           </div>
         </Link>

@@ -88,6 +88,13 @@ function compose(kind: NotificationKind, ctx: RaceContext, slot: number): { titl
   }
 }
 
+/** Deep links: the reminder opens the race's Complete button; the results open the final standings. */
+function urlFor(kind: NotificationKind, raceId: string): string {
+  if (kind === "complete_reminder") return `/admin/races/${raceId}`;
+  if (kind === "results_posted") return `/live/${raceId}`;
+  return `/draft/${raceId}`;
+}
+
 function quietNow(now: Date): boolean {
   return isQuietHours(now, env.LEAGUE_TIMEZONE, env.QUIET_HOURS_START, env.QUIET_HOURS_END);
 }
@@ -114,7 +121,7 @@ async function deliver(
     userId,
     kind,
     overallPickNumber: slot,
-    url: `/draft/${ctx.race.id}`,
+    url: urlFor(kind, ctx.race.id),
     ...compose(kind, ctx, slot),
   };
   if (!(await channel.canReach(payload))) return;

@@ -10,6 +10,7 @@ import { authRouter } from "./routes/auth";
 import { draftRouter } from "./routes/draft";
 import { driversRouter } from "./routes/drivers";
 import { healthRouter } from "./routes/health";
+import { liveRouter } from "./routes/live";
 import { notificationsRouter } from "./routes/notifications";
 import { racesRouter } from "./routes/races";
 import { seasonsRouter } from "./routes/seasons";
@@ -33,6 +34,7 @@ export function createApp() {
   api.use("/seasons", seasonsRouter);
   api.use("/races", racesRouter);
   api.use("/races", draftRouter);
+  api.use("/races", liveRouter);
   api.use("/notifications", notificationsRouter);
   api.use("/drivers", driversRouter);
   api.use(() => {

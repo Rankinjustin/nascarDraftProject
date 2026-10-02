@@ -6,14 +6,22 @@ import type {
   DraftEventView,
   DraftState,
   DriverView,
+  EntryImportResult,
   EntryUpdateResult,
+  HistoryWeek,
+  LiveView,
   PublicUser,
   PushSubscriptionInput,
+  QualifyingView,
   RaceDetail,
   RaceEntryView,
   RaceSummary,
+  ResultInput,
+  SeasonStats,
   SeasonView,
+  StandingsView,
   TransitionReason,
+  WeeklyResultView,
 } from "@dnd/shared";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
@@ -119,6 +127,7 @@ export const api = {
     request<RaceEntryView[]>("POST", `/races/${raceId}/entries`, { driverIds }),
   addNewDriver: (raceId: string, newDriver: { driverName: string; carNumber: string; teamName?: string | null }) =>
     request<RaceEntryView[]>("POST", `/races/${raceId}/entries`, { newDriver }),
+  importEntries: (raceId: string) => request<EntryImportResult>("POST", `/races/${raceId}/entries/import`),
   copyEntries: (raceId: string, sourceRaceId: string) =>
     request<RaceEntryView[]>("POST", `/races/${raceId}/entries/copy-from`, { sourceRaceId }),
   updateEntry: (raceId: string, entryId: string, body: { isEligible?: boolean; carNumber?: string }) =>
@@ -137,6 +146,20 @@ export const api = {
   resetDraft: (raceId: string) => request<DraftState>("POST", `/races/${raceId}/draft/reset`),
   regenerateOrder: (raceId: string) => request<DraftState>("POST", `/races/${raceId}/draft/regenerate`),
   listEvents: (raceId: string) => request<DraftEventView[]>("GET", `/races/${raceId}/events`),
+
+  getLive: (raceId: string) => request<LiveView>("GET", `/races/${raceId}/live`),
+  getQualifying: (raceId: string) => request<QualifyingView[]>("GET", `/races/${raceId}/qualifying`),
+  setQualifying: (raceId: string, grid: { driverId: string; startPosition: number }[]) =>
+    request<QualifyingView[]>("POST", `/races/${raceId}/qualifying`, { grid }),
+
+  completeRace: (raceId: string) => request<WeeklyResultView[]>("POST", `/races/${raceId}/complete`),
+  reopenRace: (raceId: string, note?: string) => request<void>("POST", `/races/${raceId}/reopen`, { note }),
+  replaceResults: (raceId: string, results: ResultInput[]) => request<LiveView>("PUT", `/races/${raceId}/results`, { results }),
+  patchResults: (raceId: string, results: ResultInput[]) => request<LiveView>("PATCH", `/races/${raceId}/results`, { results }),
+  getStandings: (raceId: string) => request<StandingsView>("GET", `/races/${raceId}/standings`),
+  history: (seasonId?: string) =>
+    request<HistoryWeek[]>("GET", `/races/history${seasonId ? `?seasonId=${encodeURIComponent(seasonId)}` : ""}`),
+  seasonStats: (seasonId: string) => request<SeasonStats>("GET", `/seasons/${seasonId}/stats`),
 
   subscribePush: (subscription: PushSubscriptionInput) => request<void>("POST", "/notifications/subscribe", subscription),
   unsubscribePush: (endpoint: string) => request<void>("DELETE", "/notifications/subscribe", { endpoint }),
