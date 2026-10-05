@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { api } from "../api";
+import { APP_NAME } from "../appName";
 import { useMe, useSetMe } from "../auth";
 import { PhoneInput } from "../components/PhoneInput";
 import { InstallSteps } from "../components/PushSetup";
@@ -34,7 +35,7 @@ export function LoginPage() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
-      <h1 className="mb-1 text-3xl font-bold">Draft &amp; Draft</h1>
+      <h1 className="mb-1 text-3xl font-bold">{APP_NAME}</h1>
       <p className="mb-8 text-slate-400">Weekly NASCAR fantasy for the league.</p>
 
       {isIos() && !isStandalone() && (

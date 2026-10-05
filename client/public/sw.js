@@ -1,7 +1,8 @@
 /* Service worker: app-shell caching, push display, and the tap-to-update flow (SPEC Sections 11 and 14). */
 
-// Replaced with the build number at build time. In dev it stays as-is and caching is off.
+// Replaced with the build number and app name at build time. In dev they stay as-is and caching is off.
 const VERSION = "__APP_VERSION__";
+const APP_NAME = "__APP_NAME__";
 const CACHING = !VERSION.startsWith("__");
 const CACHE = `dnd-shell-${VERSION}`;
 
@@ -65,10 +66,10 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { title: "Draft & Draft", body: event.data ? event.data.text() : "" };
+    data = { title: APP_NAME, body: event.data ? event.data.text() : "" };
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || "Draft & Draft", {
+    self.registration.showNotification(data.title || APP_NAME, {
       body: data.body || "",
       tag: data.tag,
       data: { url: data.url || "/" },

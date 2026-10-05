@@ -2,6 +2,7 @@ import { CalendarRange, Flag, History, House, ListOrdered, RefreshCw, Settings, 
 import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router";
 import { api } from "../api";
+import { APP_NAME } from "../appName";
 import { useMe } from "../auth";
 import { applyUpdate, currentPushSubscription, useUpdateAvailable } from "../pwa";
 
@@ -49,7 +50,7 @@ export function Layout() {
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-56 shrink-0 flex-col gap-1 border-r border-slate-800 p-4 md:flex">
-        <div className="mb-4 px-3 text-lg font-bold">Draft &amp; Draft</div>
+        <div className="mb-4 px-3 text-lg font-bold">{APP_NAME}</div>
         {[...TABS, ...extra].map((t) => (
           <NavLink key={t.to} to={t.to} end={t.to === "/"} className={linkClass}>
             <t.icon size={20} />
@@ -60,7 +61,7 @@ export function Layout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3 md:hidden">
-          <span className="font-bold">Draft &amp; Draft</span>
+          <span className="font-bold">{APP_NAME}</span>
           <div className="flex gap-1">
             {extra.map((t) => (
               <NavLink

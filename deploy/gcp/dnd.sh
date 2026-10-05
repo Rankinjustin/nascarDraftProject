@@ -94,6 +94,8 @@ setup() {
       const raw = Buffer.concat([Buffer.from([4]), Buffer.from(pub.x, "base64url"), Buffer.from(pub.y, "base64url")]);
       console.log(raw.toString("base64url"), privateKey.export({ format: "jwk" }).d);')
     cat >"$CONF_DIR/server.env" <<EOF
+# The name shown in the app. Keep the quotes. Takes effect on the next deploy.
+APP_NAME="Draft & Draft"
 NODE_ENV=production
 PORT=3001
 DATABASE_URL=postgresql://$APP_USER:$db_pass@localhost:5432/$DB_NAME
@@ -182,10 +184,13 @@ deploy() {
   sudo -u "$APP_USER" -H bash -c "cd $next && npm ci --no-audit --no-fund"
 
   step "Building the app"
-  # The client needs the push public key at build time; it must match the server's.
-  local pub
-  pub=$(grep '^VAPID_PUBLIC_KEY=' "$CONF_DIR/server.env" | cut -d= -f2-)
-  sudo -u "$APP_USER" -H bash -c "cd $next && VITE_VAPID_PUBLIC_KEY=$pub npm run build -w client"
+  # Build-time client settings: the push public key (must match the server's) and the league's app name.
+  local pub name
+  pub=$(grep '^VAPID_PUBLIC_KEY=' "$CONF_DIR/server.env" | cut -d= -f2- || true)
+  name=$(grep '^APP_NAME=' "$CONF_DIR/server.env" | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)
+  printf 'VITE_VAPID_PUBLIC_KEY=%s\nVITE_APP_NAME="%s"\n' "$pub" "$name" >"$next/client/.env.production.local"
+  chown "$APP_USER:$APP_USER" "$next/client/.env.production.local"
+  sudo -u "$APP_USER" -H bash -c "cd $next && npm run build -w client"
 
   step "Updating the database"
   as_app "cd $next/server && npx prisma migrate deploy"

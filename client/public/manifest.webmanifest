@@ -1,6 +1,6 @@
 {
-  "name": "Draft & Draft",
-  "short_name": "Draft & Draft",
+  "name": "__APP_NAME__",
+  "short_name": "__APP_NAME__",
   "description": "Weekly NASCAR fantasy for the league.",
   "start_url": "/",
   "scope": "/",

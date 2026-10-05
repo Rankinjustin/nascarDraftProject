@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Share, SquarePlus } from "lucide-react";
 import { api } from "../api";
+import { APP_NAME } from "../appName";
 import { currentPushSubscription, disablePush, enablePush, isIos, isStandalone, pushConfigured, pushSupported } from "../pwa";
 
 const subscriptionKey = ["push-subscription"] as const;
@@ -25,7 +26,7 @@ export function InstallSteps() {
       <li className="flex gap-3">
         <span className="font-bold text-sky-300">3</span>
         <span>
-          Open <strong>Draft &amp; Draft</strong> from your Home Screen and <strong>log in there</strong> — the installed
+          Open <strong>{APP_NAME}</strong> from your Home Screen and <strong>log in there</strong> — the installed
           app doesn't share Safari's login.
         </span>
       </li>

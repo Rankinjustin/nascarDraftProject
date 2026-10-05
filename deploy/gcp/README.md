@@ -105,6 +105,9 @@ The database, push keys, and settings are kept. If the new build doesn't start, 
 | `sudo dnd logs` | Follow the app's log (Ctrl+C to stop) |
 | `sudo dnd backup` | Take a database backup now |
 
+- **The app's name** (header, login page, Home Screen label) is the `APP_NAME="..."` line in
+  `/etc/draft-and-draft/server.env` (add the line if it isn't there; keep the quotes). It takes effect on the next
+  `dnd deploy`. Anyone who already added the app to their Home Screen keeps the old label until they re-add it.
 - **Settings** live in `/etc/draft-and-draft/server.env` (Discord webhook, quiet hours, reminder timing). After editing:
   `sudo systemctl restart draft-and-draft`. Never change the `VAPID_` keys — every phone would have to turn
   notifications on again.
