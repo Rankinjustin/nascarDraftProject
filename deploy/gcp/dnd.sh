@@ -17,6 +17,8 @@ DB_NAME=draft_and_draft
 SERVICE=draft-and-draft
 
 die() { echo "Error: $*" >&2; exit 1; }
+# Any command that fails stops the script; say where, so the log never just ends.
+trap 'echo "Error: failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 step() { echo; echo "==> $*"; }
 [[ $EUID -eq 0 ]] || die "run this with sudo."
 
@@ -28,7 +30,7 @@ setup() {
   [[ -n $domain && -n $email && -f $tarball ]] || die "usage: sudo bash dnd.sh setup <domain> <email> <release.tar.gz>"
 
   step "Swap space (1 GB of RAM isn't enough to build the app)"
-  if ! swapon --show | grep -q /swapfile; then
+  if ! swapon --show | grep /swapfile >/dev/null; then
     fallocate -l 2G /swapfile
     chmod 600 /swapfile
     mkswap /swapfile >/dev/null
@@ -67,15 +69,17 @@ setup() {
 
   step "Database"
   if [[ ! -f $CONF_DIR/db-password ]]; then
-    tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 >"$CONF_DIR/db-password"
+    # Hex from a fixed-size read: no pipe that ends early (which `set -o pipefail` would treat as a failure).
+    head -c 16 /dev/urandom | od -An -tx1 | tr -d ' 
+' >"$CONF_DIR/db-password"
     chmod 600 "$CONF_DIR/db-password"
   fi
   local db_pass
   db_pass=$(cat "$CONF_DIR/db-password")
-  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$APP_USER'" | grep -q 1; then
+  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$APP_USER'" | grep 1 >/dev/null; then
     sudo -u postgres psql -qc "CREATE ROLE $APP_USER LOGIN PASSWORD '$db_pass'"
   fi
-  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1; then
+  if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep 1 >/dev/null; then
     sudo -u postgres createdb -O "$APP_USER" "$DB_NAME"
   fi
 
