@@ -38,6 +38,8 @@ setup() {
 
   step "System packages"
   export DEBIAN_FRONTEND=noninteractive
+  # A fresh VM runs its own updates at first boot; wait for them instead of failing on the package lock.
+  apt-get() { command apt-get -o DPkg::Lock::Timeout=1200 "$@"; }
   apt-get update -q
   apt-get upgrade -yq -o Dpkg::Options::=--force-confold
   apt-get install -yq curl ca-certificates gnupg postgresql unattended-upgrades debian-keyring debian-archive-keyring apt-transport-https
