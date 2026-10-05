@@ -15,6 +15,7 @@ import { notificationsRouter } from "./routes/notifications";
 import { racesRouter } from "./routes/races";
 import { seasonsRouter } from "./routes/seasons";
 import { usersRouter } from "./routes/users";
+import { serveClient } from "./staticClient";
 
 export function createApp() {
   const app = express();
@@ -42,6 +43,7 @@ export function createApp() {
   });
 
   app.use("/api", api);
+  serveClient(app);
   if (env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
   app.use(errorHandler);
   return app;

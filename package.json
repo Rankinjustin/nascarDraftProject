@@ -1,7 +1,11 @@
 {
   "name": "draft-and-draft",
   "private": true,
-  "workspaces": ["shared", "server", "client"],
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
   "scripts": {
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "dev:server": "npm run dev -w server",
@@ -9,8 +13,13 @@
     "test": "npm test -w shared && npm test -w server",
     "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client",
     "db:migrate": "npm run db:migrate -w server",
-    "db:seed": "npm run db:seed -w server"
+    "db:seed": "npm run db:seed -w server",
+    "release": "git archive --format=tar.gz -o release.tar.gz HEAD"
   },
-  "devDependencies": { "concurrently": "^9.0.0" },
-  "engines": { "node": ">=22" }
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
 }
