@@ -55,10 +55,14 @@ Plan on about an hour the first time, most of it waiting on installs.
 
    ```bash
    mkdir -p ~/dnd && tar -xzf ~/release.tar.gz -C ~/dnd
-   sudo bash ~/dnd/deploy/gcp/dnd.sh setup ourleague.duckdns.org you@example.com ~/release.tar.gz
+   sudo nohup bash ~/dnd/deploy/gcp/dnd.sh setup ourleague.duckdns.org you@example.com ~/release.tar.gz > ~/setup.log 2>&1 &
+   tail -f ~/setup.log
    ```
 
-   This takes 10–20 minutes. It ends with `Running. https://ourleague.duckdns.org`.
+   This takes 10–20 minutes and runs in the background, because the browser SSH window often disconnects while the
+   small server is busy installing. If it drops, reconnect and run `tail -f ~/setup.log` again (Ctrl+C only stops
+   watching). It's done when the log ends with `Running. https://ourleague.duckdns.org` and `Setup complete.`
+   Re-running the setup is safe; if a run was cut off mid-install, run `sudo dpkg --configure -a` first.
 4. Load the season, drivers, and your league:
 
    ```bash
@@ -85,7 +89,8 @@ Admin → Members → **New setup link**.
 On your PC: commit, then `npm run release`. Upload the new `release.tar.gz` in the SSH window, then:
 
 ```bash
-sudo dnd deploy ~/release.tar.gz
+sudo nohup dnd deploy ~/release.tar.gz > ~/deploy.log 2>&1 &
+tail -f ~/deploy.log
 ```
 
 The database, push keys, and settings are kept. If the new build doesn't start, the old one is left in
