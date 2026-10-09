@@ -1,8 +1,8 @@
 import type { DraftOrderView } from "@dnd/shared";
-import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
-const COLORS = ["#0369a1", "#4338ca", "#047857", "#b45309", "#be123c", "#6d28d9", "#0f766e", "#c2410c", "#0e7490", "#4d7c0f"];
+// Logo blue, red, magenta first, then deeper racing colors; all dark enough for white names.
+const COLORS = ["#027dc6", "#e62329", "#c01f82", "#0a466b", "#a35f09", "#6d28d9", "#047857", "#9c1968", "#c2410c", "#0e7490"];
 const SIZE = 300;
 const C = SIZE / 2;
 const R = C - 6;
@@ -54,20 +54,24 @@ export function WheelSpinner({ order, onDone }: { order: DraftOrderView[]; onDon
 
       {!finished && target && (
         <div className="relative" style={{ width: SIZE, maxWidth: "100%" }}>
-          <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1 border-x-[12px] border-t-[20px] border-x-transparent border-t-white" />
-          <motion.div
+          <div className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1 border-x-[12px] border-t-[20px] border-x-transparent border-t-slate-50" />
+          {/* Keyed so each spin remounts and replays the animation from zero. */}
+          <div
             key={revealed}
-            initial={{ rotate: 0 }}
-            animate={{ rotate: rotation }}
-            transition={{ duration: remaining.length > 1 ? 2.6 : 0.9, ease: [0.12, 0.8, 0.2, 1] }}
-            onAnimationComplete={onLanded}
+            style={
+              {
+                "--wheel-to": `${rotation}deg`,
+                animation: `wheel-spin ${remaining.length > 1 ? 2.6 : 0.9}s cubic-bezier(0.12, 0.8, 0.2, 1) forwards`,
+              } as CSSProperties
+            }
+            onAnimationEnd={onLanded}
           >
             <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-auto w-full">
               {remaining.length === 1 ? (
                 <circle cx={C} cy={C} r={R} fill={COLORS[0]} />
               ) : (
                 remaining.map((o, i) => (
-                  <path key={o.userId} d={slicePath(i * slice, (i + 1) * slice)} fill={COLORS[i % COLORS.length]} stroke="#020617" strokeWidth={2} />
+                  <path key={o.userId} d={slicePath(i * slice, (i + 1) * slice)} fill={COLORS[i % COLORS.length]} className="stroke-slate-900" strokeWidth={2} />
                 ))
               )}
               {remaining.map((o, i) => {
@@ -89,32 +93,27 @@ export function WheelSpinner({ order, onDone }: { order: DraftOrderView[]; onDon
                   </text>
                 );
               })}
-              <circle cx={C} cy={C} r={18} fill="#0f172a" stroke="white" strokeWidth={3} />
+              <circle cx={C} cy={C} r={18} className="fill-slate-900 stroke-slate-50" strokeWidth={3} />
             </svg>
-          </motion.div>
+          </div>
         </div>
       )}
 
       <div className="min-h-8 text-center text-xl font-bold">
         {landed && target && (
-          <motion.span initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
+          <span className="inline-block animate-pop-in">
             Pick {target.pickPosition}: {target.displayName}
-          </motion.span>
+          </span>
         )}
         {finished && "The order is set."}
       </div>
 
       <ol className="grid w-full grid-cols-1 gap-1 sm:grid-cols-2">
         {shown.map((o) => (
-          <motion.li
-            key={o.userId}
-            initial={{ opacity: 0, x: -8 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-3 rounded-lg bg-slate-800 px-3 py-2"
-          >
+          <li key={o.userId} className="flex animate-slide-in items-center gap-3 rounded-lg bg-slate-800 px-3 py-2">
             <span className="w-6 text-right font-mono font-bold text-sky-300">{o.pickPosition}</span>
             {o.displayName}
-          </motion.li>
+          </li>
         ))}
       </ol>
     </section>

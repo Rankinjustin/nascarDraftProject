@@ -1,21 +1,25 @@
-import { Prisma, type Race } from "@prisma/client";
+import type { DraftOrder, Pick, Prisma, Race } from "@prisma/client";
 import {
   OVERRIDE_REASONS,
   ROUNDS,
-  SCORING_RULES,
+  type DraftOrderView,
+  type PickView,
   type RaceDetail,
+  type RaceInput,
   type RaceSummary,
   type TransitionReason,
 } from "@dnd/shared";
 import { prisma } from "../db";
-import { HttpError, isUniqueViolation, notFound } from "../errors";
+import { conflict, isUniqueViolation, notFound } from "../errors";
 import { pickCurrentRace } from "../races/current";
 import { withRaceLock } from "../races/lock";
 import { applyTransition } from "../races/transition";
 import { byCarNumber, toEntryView } from "./entries";
+import { findSeason } from "./seasons";
 
-const withEntryCount = { _count: { select: { entries: true } } } satisfies Prisma.RaceInclude;
-type RaceWithCount = Race & { _count: { entries: number } };
+export const withEntryCount = { _count: { select: { entries: true } } } satisfies Prisma.RaceInclude;
+/** A race with its entry count, or with its entries already loaded (then they're counted instead). */
+type RaceWithCount = Race & ({ _count: { entries: number } } | { entries: unknown[] });
 
 export function toRaceSummary(race: RaceWithCount): RaceSummary {
   return {
@@ -25,23 +29,37 @@ export function toRaceSummary(race: RaceWithCount): RaceSummary {
     raceName: race.raceName,
     trackName: race.trackName,
     raceDate: race.raceDate.toISOString(),
+    qualifyingAt: race.qualifyingAt?.toISOString() ?? null,
+    trackMapUrl: race.trackMapUrl,
+    imageUrl: race.imageUrl,
     status: race.status,
     scoringRuleKey: race.scoringRuleKey,
     totalLaps: race.totalLaps,
     wentLiveAt: race.wentLiveAt?.toISOString() ?? null,
     completedAt: race.completedAt?.toISOString() ?? null,
-    entryCount: race._count.entries,
+    entryCount: "entries" in race ? race.entries.length : race._count.entries,
   };
 }
 
-const nascarRaceIdTaken = () =>
-  new HttpError(409, "NASCAR_RACE_ID_TAKEN", "Another race already has that NASCAR race ID.");
+export const toOrderView = (o: DraftOrder & { user: { displayName: string } }): DraftOrderView => ({
+  userId: o.userId,
+  displayName: o.user.displayName,
+  pickPosition: o.pickPosition,
+});
+
+export const toPickView = (p: Pick): PickView => ({
+  overallPickNumber: p.overallPickNumber,
+  roundNumber: p.roundNumber,
+  userId: p.userId,
+  driverId: p.driverId,
+  createdByUserId: p.createdByUserId,
+});
+
+const nascarRaceIdTaken = () => conflict("NASCAR_RACE_ID_TAKEN", "Another race already has that NASCAR race ID.");
 
 /** Races in a season by date; defaults to the current season. */
 export async function listRaces(seasonId?: string): Promise<RaceSummary[]> {
-  const season = seasonId
-    ? await prisma.season.findUnique({ where: { id: seasonId } })
-    : await prisma.season.findFirst({ where: { isCurrent: true } });
+  const season = await findSeason(seasonId);
   if (!season) return [];
   const races = await prisma.race.findMany({
     where: { seasonId: season.id },
@@ -61,7 +79,6 @@ export async function getRaceDetail(id: string): Promise<RaceDetail> {
   const race = await prisma.race.findUnique({
     where: { id },
     include: {
-      ...withEntryCount,
       entries: { include: { driver: true } },
       draftOrders: { include: { user: true }, orderBy: { pickPosition: "asc" } },
       picks: { orderBy: { overallPickNumber: "asc" } },
@@ -73,47 +90,31 @@ export async function getRaceDetail(id: string): Promise<RaceDetail> {
   return {
     ...toRaceSummary(race),
     entries: race.entries.map((e) => toEntryView(e, drafted)).sort(byCarNumber),
-    draftOrder: race.draftOrders.map((o) => ({
-      userId: o.userId,
-      displayName: o.user.displayName,
-      pickPosition: o.pickPosition,
-    })),
-    picks: race.picks.map((p) => ({
-      overallPickNumber: p.overallPickNumber,
-      roundNumber: p.roundNumber,
-      userId: p.userId,
-      driverId: p.driverId,
-      createdByUserId: p.createdByUserId,
-    })),
+    draftOrder: race.draftOrders.map(toOrderView),
+    picks: race.picks.map(toPickView),
     picksMade: race.picks.length,
     totalSlots: race.draftOrders.length * ROUNDS,
   };
 }
 
-export interface RaceInput {
-  seasonId?: string;
-  raceName: string;
-  trackName: string;
-  raceDate: Date;
-  nascarRaceId?: number | null;
-  totalLaps?: number | null;
-  scoringRuleKey?: string;
-}
+/** RaceInput with its dates parsed. */
+export type NewRace = Omit<RaceInput, "raceDate" | "qualifyingAt"> & { raceDate: Date; qualifyingAt?: Date | null };
 
-export async function createRace(input: RaceInput): Promise<RaceSummary> {
-  const seasonId = input.seasonId ?? (await prisma.season.findFirst({ where: { isCurrent: true } }))?.id;
-  if (!seasonId) throw new HttpError(409, "NO_CURRENT_SEASON", "There is no current season to add the race to.");
+export async function createRace(input: NewRace): Promise<RaceSummary> {
+  const season = await findSeason(input.seasonId);
+  if (!season) {
+    throw input.seasonId ? notFound("Season") : conflict("NO_CURRENT_SEASON", "There is no current season to add the race to.");
+  }
   try {
-    const race = await prisma.race.create({ data: { ...input, seasonId }, include: withEntryCount });
+    const race = await prisma.race.create({ data: { ...input, seasonId: season.id }, include: withEntryCount });
     return toRaceSummary(race);
   } catch (err) {
     if (isUniqueViolation(err)) throw nascarRaceIdTaken();
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") throw notFound("Season");
     throw err;
   }
 }
 
-export type RacePatch = Partial<Omit<RaceInput, "seasonId">>;
+export type RacePatch = Partial<Omit<NewRace, "seasonId">>;
 
 /** Metadata only; status changes go through overrideStatus or their dedicated actions. */
 export async function updateRace(id: string, patch: RacePatch): Promise<RaceSummary> {
@@ -121,7 +122,7 @@ export async function updateRace(id: string, patch: RacePatch): Promise<RaceSumm
     await withRaceLock(id, async (tx, race) => {
       if (patch.scoringRuleKey !== undefined && patch.scoringRuleKey !== race.scoringRuleKey) {
         if (race.status === "COMPLETED" || race.status === "CORRECTING") {
-          throw new HttpError(409, "RACE_COMPLETED", "The scoring rule can't change after the race is completed.");
+          throw conflict("RACE_COMPLETED", "The scoring rule can't change after the race is completed.");
         }
       }
       await tx.race.update({ where: { id }, data: patch });
@@ -141,10 +142,6 @@ export async function updateRace(id: string, patch: RacePatch): Promise<RaceSumm
   return toRaceSummary(race);
 }
 
-export function isScoringRuleKey(key: string): boolean {
-  return key in SCORING_RULES;
-}
-
 /** Commissioner status override (POST /races/:id/status). Only the four override reasons are accepted. */
 export async function overrideStatus(
   id: string,
@@ -153,8 +150,7 @@ export async function overrideStatus(
   note?: string,
 ): Promise<RaceSummary> {
   if (!(OVERRIDE_REASONS as readonly string[]).includes(reason)) {
-    throw new HttpError(
-      409,
+    throw conflict(
       "OVERRIDE_NOT_ALLOWED",
       `"${reason}" can't be applied as an override; use its own action (wheel spin, complete, reopen, regenerate).`,
     );

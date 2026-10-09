@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roundForPick, snakeOrder, whoseTurn } from "./draft";
+import { draftTurn, rosterFor, roundForPick, snakeOrder, whoseTurn } from "./draft";
 
 const nine = ["u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8", "u9"];
 
@@ -66,5 +66,26 @@ describe("roundForPick", () => {
     [27, 3],
   ])("pick %i with 9 users is round %i", (pick, round) => {
     expect(roundForPick(pick, 9)).toBe(round);
+  });
+});
+
+describe("draftTurn", () => {
+  it("builds the 3-round snake and reads the turn off it", () => {
+    expect(draftTurn(["a", "b"], 2)).toEqual({ snake: ["a", "b", "b", "a", "a", "b"], onTheClock: "b" });
+    expect(draftTurn(["a", "b"], 6).onTheClock).toBeNull();
+  });
+});
+
+describe("rosterFor", () => {
+  const picks = [
+    { userId: "a", n: 1 },
+    { userId: "b", n: 2 },
+    { userId: "b", n: 3 },
+    { userId: "a", n: 4 },
+  ];
+
+  it("keeps the user's picks in order and pads empty slots with null", () => {
+    expect(rosterFor("a", picks)).toEqual([picks[0], picks[3], null]);
+    expect(rosterFor("c", picks)).toEqual([null, null, null]);
   });
 });

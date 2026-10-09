@@ -1,17 +1,19 @@
 import type { PublicUser } from "@dnd/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Copy, Link2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { NavLink, Outlet } from "react-router";
 import { api } from "../api";
-import { meKey, useMe } from "../auth";
+import { useMe } from "../auth";
 import { PhoneInput } from "../components/PhoneInput";
-
-const usersKey = ["users"] as const;
+import { ErrorText, QueryState } from "../components/QueryState";
+import { CardPhoto, TrackOutline } from "../components/RaceCard";
+import { keys, useUsers } from "../queries";
+import { BUILT_IN_TRACKS, trackArt } from "../tracks";
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
   `flex min-h-11 flex-1 items-center justify-center rounded-lg font-semibold ${
-    isActive ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"
+    isActive ? "bg-slate-800 text-slate-50" : "text-slate-400 hover:text-slate-50"
   }`;
 
 /** Commissioner tools: races and entries, league members. */
@@ -26,6 +28,9 @@ export function AdminPage() {
         <NavLink to="/admin/members" className={tabClass}>
           Members
         </NavLink>
+        <NavLink to="/admin/tracks" className={tabClass}>
+          Tracks
+        </NavLink>
       </nav>
       <Outlet />
     </div>
@@ -34,13 +39,13 @@ export function AdminPage() {
 
 export function MembersTab() {
   const queryClient = useQueryClient();
-  const users = useQuery({ queryKey: usersKey, queryFn: api.listUsers });
+  const users = useUsers();
   // The most recent setup link, shown once so the commissioner can copy it into the group chat.
   const [link, setLink] = useState<{ name: string; url: string } | null>(null);
 
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: usersKey });
-    void queryClient.invalidateQueries({ queryKey: meKey });
+    void queryClient.invalidateQueries({ queryKey: keys.users });
+    void queryClient.invalidateQueries({ queryKey: keys.me });
   };
 
   return (
@@ -56,8 +61,7 @@ export function MembersTab() {
         }}
       />
 
-      {users.isPending && <p className="text-slate-400">Loading…</p>}
-      {users.isError && <p className="text-red-400">{users.error.message}</p>}
+      <QueryState query={users} />
       <ul className="flex flex-col gap-2">
         {users.data?.map((u) => (
           <UserRow key={u.id} user={u} onChanged={refresh} onLink={(url) => setLink({ name: u.displayName, url })} />
@@ -122,7 +126,7 @@ function AddUserForm({ onCreated }: { onCreated: (user: PublicUser, setupLink: s
         onChange={(e) => setDisplayName(e.target.value)}
       />
       <PhoneInput value={phone} onChange={setPhone} />
-      {create.isError && <p className="text-sm text-red-400">{create.error.message}</p>}
+      <ErrorText error={create.error} />
       <button type="submit" className="btn-primary" disabled={create.isPending || !displayName || !phone}>
         Add and get setup link
       </button>
@@ -148,7 +152,6 @@ function UserRow({
     mutationFn: () => api.newSetupLink(user.id),
     onSuccess: ({ setupLink }) => onLink(setupLink),
   });
-  const error = update.error ?? reissue.error;
   const isCommish = user.role === "COMMISSIONER";
 
   return (
@@ -195,7 +198,34 @@ function UserRow({
           {user.isActive ? "Deactivate" : "Reactivate"}
         </button>
       </div>
-      {error && <p className="text-sm text-red-400">{error.message}</p>}
+      <ErrorText error={update.error ?? reissue.error} />
     </li>
+  );
+}
+
+/** Preview of every track's built-in race card pictures. */
+export function TracksTab() {
+  return (
+    <section className="flex flex-col gap-3">
+      <p className="text-sm text-slate-400">
+        Every race at these tracks uses these pictures unless its race page has its own links.
+      </p>
+      {BUILT_IN_TRACKS.map((trackName) => {
+        const { outline, photo } = trackArt({ trackName, trackMapUrl: null, imageUrl: null });
+        return (
+          <div key={trackName} className="card relative flex min-h-24 items-center gap-3 overflow-hidden">
+            {photo && <CardPhoto url={photo} />}
+            <div className="relative min-w-0 flex-1 font-semibold">{trackName}</div>
+            {outline ? (
+              <div className="relative">
+                <TrackOutline url={outline} trackName={trackName} />
+              </div>
+            ) : (
+              <div className="relative text-sm text-slate-400">No outline</div>
+            )}
+          </div>
+        );
+      })}
+    </section>
   );
 }

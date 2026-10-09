@@ -12,6 +12,16 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="__APP_NAME_HTML__" />
     <title>__APP_NAME_HTML__</title>
+    <script>
+      // Before first paint so the page never flashes the wrong theme. Same rule as src/theme.ts.
+      (function () {
+        var saved;
+        try { saved = localStorage.getItem("theme"); } catch (e) {}
+        var light = saved === "light" || (saved !== "dark" && matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.dataset.theme = light ? "light" : "dark";
+        document.querySelector('meta[name="theme-color"]').content = light ? "#f1f5f9" : "#0f172a";
+      })();
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased">
     <div id="root"></div>

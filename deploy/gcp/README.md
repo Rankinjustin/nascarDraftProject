@@ -86,16 +86,49 @@ Admin → Members → **New setup link**.
 
 ## Updating the app later
 
-On your PC: commit, then `npm run release`. Upload the new `release.tar.gz` in the SSH window, then:
+Once automatic deploys are set up (below), just commit and `git push`. Until then, or whenever GitHub is down:
+on your PC commit, then `npm run release`. Upload the new `release.tar.gz` in the SSH window, then:
 
 ```bash
 sudo nohup dnd deploy ~/release.tar.gz > ~/deploy.log 2>&1 &
 tail -f ~/deploy.log
 ```
 
-The database, push keys, and settings are kept. If the new build doesn't start, the old one is left in
-`/opt/draft-and-draft.previous`. **Don't deploy from the start of qualifying until the race is completed**
-(SPEC Section 2): a restart drops the live-feed cache and can miss a qualifying capture.
+Every deploy backs up the database first. The database, push keys, and settings are kept; settings added in a newer
+build are appended to `server.env` with their defaults. The server runs the TypeScript directly through `tsx` (a
+production dependency), and the deploy runs only the Vite build, not the typecheck, which CI or your PC already ran.
+
+**Rolling back.** The build before the last deploy is kept in `/opt/draft-and-draft.previous`. `sudo dnd rollback`
+swaps it back in and restarts (run it again to undo). It does **not** undo database migrations: if the newer build
+changed the database, the older code may not work with it, and you'd need to restore the backup taken just before
+that deploy (in `/var/backups/draft-and-draft`).
+
+**Race weekend freeze.** A restart drops the live-feed cache and can miss a qualifying capture or live results
+(SPEC Section 2), so every `dnd deploy`, manual or from GitHub, refuses from an hour before qualifying until the race is completed (a race
+left LIVE stops blocking a day after its start). If you really
+must ship (say, a fix for the race itself), add `--force` to the end of the deploy command.
+
+## Automatic deploys from GitHub
+
+Every push to `master` runs the typecheck and tests on GitHub, and if they pass, ships the build to the server
+(`.github/workflows/deploy.yml`). A failing test means nothing is deployed. Watch it under your repo's **Actions** tab.
+
+One-time setup:
+
+1. Do one manual deploy (above) of a build that includes this section, so the server has the newest `dnd`.
+2. In the SSH window: `sudo dnd ci-setup`. It makes a `deploy` user whose key can only run a deploy, and prints
+   three values.
+3. On GitHub: your repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**. Add
+   `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS`, and `DEPLOY_SSH_KEY`, pasting each value exactly as printed (for the key, every
+   line, including `BEGIN` and `END`). Then clear the SSH window.
+4. `git push`. The first run redeploys the same build; that's fine.
+
+A push during a race weekend fails on the server's freeze. That's expected: after the race is completed, open the
+failed run in **Actions** → **Re-run all jobs**, or push again. The same button re-runs a deploy any time, and
+**Run workflow** on the Deploy workflow ships the latest `master` without a new commit.
+
+If the key leaks or you want a new one, run `sudo dnd ci-setup` again and replace the three secrets. The old key
+stops working immediately.
 
 ## Day to day
 
@@ -104,9 +137,10 @@ The database, push keys, and settings are kept. If the new build doesn't start, 
 | `sudo dnd status` | Is the app, HTTPS, and the database running? |
 | `sudo dnd logs` | Follow the app's log (Ctrl+C to stop) |
 | `sudo dnd backup` | Take a database backup now |
+| `sudo dnd rollback` | Go back to the previous build (see "Rolling back") |
 
 - **The app's name** (header, login page, Home Screen label) is the `APP_NAME="..."` line in
-  `/etc/draft-and-draft/server.env` (add the line if it isn't there; keep the quotes). It takes effect on the next
+  `/etc/draft-and-draft/server.env` (keep the quotes; blank uses the built-in default). It takes effect on the next
   `dnd deploy`. Anyone who already added the app to their Home Screen keeps the old label until they re-add it.
 - **Settings** live in `/etc/draft-and-draft/server.env` (Discord webhook, quiet hours, reminder timing). After editing:
   `sudo systemctl restart draft-and-draft`. Never change the `VAPID_` keys — every phone would have to turn

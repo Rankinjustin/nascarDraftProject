@@ -1,4 +1,4 @@
-import { TRANSITIONS, type TransitionReason } from "@dnd/shared";
+import { SCORING_RULES, TRANSITIONS, type TransitionReason } from "@dnd/shared";
 import { Router } from "express";
 import { z } from "zod";
 import { currentUser, requireAuth, requireCommissioner } from "../auth/sessions";
@@ -11,41 +11,38 @@ import {
   listEntries,
   updateEntry,
 } from "../services/entries";
-import {
-  createRace,
-  getCurrentRace,
-  getRaceDetail,
-  isScoringRuleKey,
-  listRaces,
-  overrideStatus,
-  updateRace,
-} from "../services/races";
+import { createRace, getCurrentRace, getRaceDetail, listRaces, overrideStatus, updateRace } from "../services/races";
+import { idParams } from "./params";
 
 export const racesRouter = Router();
 
 const id = z.uuid();
-const raceParams = z.object({ id });
 const entryParams = z.object({ id, entryId: id });
+
+// Shown as an image, so only https links or one of the app's own files (e.g. /tracks/charlotte.svg).
+const imageLink = z
+  .union([z.url({ protocol: /^https$/ }), z.string().regex(/^\/[\w./-]+$/)])
+  .pipe(z.string().max(2000))
+  .nullable();
 
 const raceFields = {
   raceName: z.string().trim().min(1).max(120),
   trackName: z.string().trim().min(1).max(120),
   // The browser converts the commissioner's local time to an ISO instant; stored as UTC.
   raceDate: z.iso.datetime({ offset: true }).transform((s) => new Date(s)),
+  qualifyingAt: z.iso.datetime({ offset: true }).transform((s) => new Date(s)).nullable(),
+  trackMapUrl: imageLink,
+  imageUrl: imageLink,
   nascarRaceId: z.number().int().positive().nullable(),
   totalLaps: z.number().int().positive().nullable(),
-  scoringRuleKey: z.string().refine(isScoringRuleKey, "Unknown scoring rule."),
+  scoringRuleKey: z.string().refine((key) => key in SCORING_RULES, "Unknown scoring rule."),
 };
 
-const createBody = z.object({
-  seasonId: id.optional(),
-  raceName: raceFields.raceName,
-  trackName: raceFields.trackName,
-  raceDate: raceFields.raceDate,
-  nascarRaceId: raceFields.nascarRaceId.optional(),
-  totalLaps: raceFields.totalLaps.optional(),
-  scoringRuleKey: raceFields.scoringRuleKey.optional(),
-});
+// The RaceInput wire shape: name, track, and date required; everything else optional.
+const createBody = z
+  .object({ seasonId: id, ...raceFields })
+  .partial()
+  .required({ raceName: true, trackName: true, raceDate: true });
 
 const patchBody = z
   .object(raceFields)
@@ -92,7 +89,7 @@ racesRouter.get("/history", requireAuth, async (req, res) => {
 });
 
 racesRouter.get("/:id", requireAuth, async (req, res) => {
-  const { id } = raceParams.parse(req.params);
+  const { id } = idParams.parse(req.params);
   res.json(await getRaceDetail(id));
 });
 
@@ -101,33 +98,33 @@ racesRouter.post("/", requireCommissioner, async (req, res) => {
 });
 
 racesRouter.patch("/:id", requireCommissioner, async (req, res) => {
-  const { id } = raceParams.parse(req.params);
+  const { id } = idParams.parse(req.params);
   res.json(await updateRace(id, patchBody.parse(req.body)));
 });
 
 racesRouter.post("/:id/status", requireCommissioner, async (req, res) => {
-  const { id } = raceParams.parse(req.params);
+  const { id } = idParams.parse(req.params);
   const { reason, note } = statusBody.parse(req.body);
   res.json(await overrideStatus(id, reason, currentUser(req).id, note));
 });
 
 racesRouter.get("/:id/entries", requireAuth, async (req, res) => {
-  const { id } = raceParams.parse(req.params);
+  const { id } = idParams.parse(req.params);
   res.json(await listEntries(id));
 });
 
 racesRouter.post("/:id/entries", requireCommissioner, async (req, res) => {
-  const { id } = raceParams.parse(req.params);
+  const { id } = idParams.parse(req.params);
   res.status(201).json(await addEntries(id, addEntriesBody.parse(req.body)));
 });
 
 racesRouter.post("/:id/entries/import", requireCommissioner, async (req, res) => {
-  const { id } = raceParams.parse(req.params);
+  const { id } = idParams.parse(req.params);
   res.json(await importEntries(id));
 });
 
 racesRouter.post("/:id/entries/copy-from", requireCommissioner, async (req, res) => {
-  const { id } = raceParams.parse(req.params);
+  const { id } = idParams.parse(req.params);
   const { sourceRaceId } = z.object({ sourceRaceId: z.uuid() }).parse(req.body);
   res.json(await copyEntriesFrom(id, sourceRaceId));
 });

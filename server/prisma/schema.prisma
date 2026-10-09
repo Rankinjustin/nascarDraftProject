@@ -36,7 +36,6 @@ enum DraftEventType {
 model User {
   id                   String   @id @default(uuid())
   phoneNumber          String   @unique   // E.164, e.g. "+19205551234"
-  email                String?  @unique   // optional, not used for auth
   passwordHash         String?            // null until the setup link is used
   displayName          String
   role                 Role     @default(MEMBER)
@@ -100,6 +99,9 @@ model Race {
   raceName       String
   trackName      String
   raceDate       DateTime             // published race start time, UTC. Also the pick deadline.
+  qualifyingAt   DateTime?            // scheduled qualifying start, UTC; display only
+  trackMapUrl    String?              // https image link set by the commissioner; display only (race card)
+  imageUrl       String?              // https image link, faded behind the race card; display only
   status         RaceStatus @default(UPCOMING)
   wentLiveAt     DateTime?            // first LIVE transition; never cleared, even by false_start
   scoringRuleKey String     @default("average_finish")
@@ -129,7 +131,6 @@ model Driver {
   driverName     String
   carNumber      String
   teamName       String?
-  isActive       Boolean @default(true)
 
   entries    RaceEntry[]
   picks      Pick[]
@@ -150,7 +151,6 @@ model RaceEntry {
   driver Driver @relation(fields: [driverId], references: [id])
 
   @@unique([raceId, driverId])
-  @@index([raceId])
 }
 
 model DraftOrder {
@@ -204,7 +204,6 @@ model QualifyingResult {
   driver Driver @relation(fields: [driverId], references: [id])
 
   @@unique([raceId, driverId])
-  @@index([raceId])
   // NOTE: deliberately NO unique on [raceId, startPosition] — see Section 7,
   // "Qualifying capture". Positions shift during a live session and a unique
   // constraint there makes whole-grid replacement awkward.
@@ -279,7 +278,6 @@ model NotificationLog {
   updatedAt         DateTime @updatedAt
 
   @@unique([raceId, userId, channel, kind, overallPickNumber])
-  @@index([raceId])
 }
 // WHY SENTINELS INSTEAD OF NULL: in PostgreSQL, NULL is never equal to NULL,
 // so a unique constraint containing a nullable column does not dedupe rows where

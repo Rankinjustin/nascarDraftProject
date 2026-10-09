@@ -1,7 +1,8 @@
 import {
-  ROUNDS,
-  SCORING_RULES,
+  mean,
   rankEntries,
+  rosterFor,
+  scoringRuleFor,
   type FantasyStanding,
   type LiveDriverRow,
   type LiveView,
@@ -10,15 +11,23 @@ import {
 } from "@dnd/shared";
 import { prisma } from "../db";
 import { notFound } from "../errors";
-import { liveFeedSnapshot } from "../integrations/nascarFeed";
+import { flagLabel, liveFeedSnapshot } from "../integrations/nascarFeed";
 import { toRaceSummary } from "./races";
 import { fieldSizeFor } from "./scoring";
-import { getQualifying } from "./qualifying";
+import { gridFor } from "./qualifying";
 
-const mean = (values: (number | null)[]): number | null => {
-  const known = values.filter((v): v is number => v !== null);
-  return known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
+const EMPTY_SLOT: RosterSlot = {
+  driverId: null,
+  driverName: null,
+  carNumber: null,
+  startPosition: null,
+  position: null,
+  change: null,
+  isWithdrawn: false,
 };
+
+/** start − current: positive = positions gained. */
+const changeOf = (start: number | null, position: number | null) => (start !== null && position !== null ? start - position : null);
 
 /**
  * GET /races/:id/live — the race page's single poll. Reads the database and the poller's in-memory feed;
@@ -28,7 +37,6 @@ export async function getLiveView(raceId: string): Promise<LiveView> {
   const race = await prisma.race.findUnique({
     where: { id: raceId },
     include: {
-      _count: { select: { entries: true } },
       entries: { include: { driver: true } },
       draftOrders: { orderBy: { pickPosition: "asc" }, include: { user: true } },
       picks: { orderBy: { overallPickNumber: "asc" } },
@@ -37,7 +45,7 @@ export async function getLiveView(raceId: string): Promise<LiveView> {
   });
   if (!race) throw notFound("Race");
 
-  const qualifying = await getQualifying(raceId);
+  const qualifying = await gridFor(prisma, raceId);
   const fieldSize = await fieldSizeFor(prisma, raceId);
   const final = race.status === "COMPLETED" || race.status === "CORRECTING";
 
@@ -64,7 +72,7 @@ export async function getLiveView(raceId: string): Promise<LiveView> {
         carNumber: entryByDriver.get(r.driverId)?.carNumber ?? r.driver.carNumber,
         position,
         startPosition,
-        change: startPosition !== null && position !== null ? startPosition - position : null,
+        change: changeOf(startPosition, position),
         lapsCompleted: r.lapsCompleted,
         status: r.status,
         ownerUserId,
@@ -74,17 +82,18 @@ export async function getLiveView(raceId: string): Promise<LiveView> {
     .sort((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity));
 
   const rosters = race.draftOrders.map((o) => {
-    const picks = race.picks.filter((p) => p.userId === o.userId);
-    const slots: RosterSlot[] = Array.from({ length: ROUNDS }, (_, i) => {
-      const pick = picks[i];
-      if (!pick) return { driverId: null, driverName: null, carNumber: null, startPosition: null, position: null, isWithdrawn: false };
+    const slots = rosterFor(o.userId, race.picks).map((pick): RosterSlot => {
+      if (!pick) return EMPTY_SLOT;
       const entry = entryByDriver.get(pick.driverId);
+      const startPosition = startByDriver.get(pick.driverId) ?? null;
+      const position = positionOf(pick.driverId);
       return {
         driverId: pick.driverId,
         driverName: entry?.driver.driverName ?? null,
         carNumber: entry?.carNumber ?? null,
-        startPosition: startByDriver.get(pick.driverId) ?? null,
-        position: positionOf(pick.driverId),
+        startPosition,
+        position,
+        change: changeOf(startPosition, position),
         isWithdrawn: !entry || !entry.isEligible,
       };
     });
@@ -92,7 +101,6 @@ export async function getLiveView(raceId: string): Promise<LiveView> {
   });
 
   // Same rankEntries as completion, against current positions, so projected and final standings agree on method.
-  const rule = SCORING_RULES[race.scoringRuleKey] ?? SCORING_RULES.average_finish!;
   const entries: UserEntry[] = rosters.map(({ order, slots }) => ({
     userId: order.userId,
     drivers: slots.map((s) => ({ driverId: s.driverId, finishPosition: s.position })),
@@ -102,7 +110,7 @@ export async function getLiveView(raceId: string): Promise<LiveView> {
     race.status === "COMPLETED"
       ? await prisma.weeklyResult.findMany({ where: { raceId }, select: { userId: true, score: true, rank: true } })
       : race.results.length > 0
-        ? rankEntries(entries, rule, { fieldSize })
+        ? rankEntries(entries, scoringRuleFor(race.scoringRuleKey), { fieldSize })
         : [];
   const rankByUser = new Map(ranked.map((r) => [r.userId, r]));
 
@@ -127,14 +135,14 @@ export async function getLiveView(raceId: string): Promise<LiveView> {
       ...toRaceSummary(race),
       currentLap: race.currentLap,
       totalLaps: race.totalLaps,
-      flagState: race.flagState,
+      flag: flagLabel(race.flagState),
       feedUpdatedAt: race.feedUpdatedAt?.toISOString() ?? null,
       checkeredSeenAt: race.checkeredSeenAt?.toISOString() ?? null,
     },
     feed: ours
       ? {
           sessionType: ours.sessionType,
-          flagState: ours.flagState,
+          flag: flagLabel(ours.flagState),
           currentLap: ours.currentLap,
           totalLaps: ours.totalLaps,
           fetchedAt: ours.fetchedAt.toISOString(),

@@ -1,6 +1,6 @@
 /**
  * Seeds the current season, its points-race schedule, the driver field, and the league's users.
- * Safe to re-run: everything is upserted by a natural key.
+ * Safe to re-run: everything is upserted by a natural key. Races that already exist are left alone.
  *
  * Data files (prisma/seed-data/):
  *   users.json        — the real league; gitignored so phone numbers stay out of the repo.
@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { issueSetupLink } from "../src/auth/setupTokens";
+import { zonedInstant } from "../src/notifications/quietHours";
 
 const prisma = new PrismaClient();
 const dataDir = join(dirname(fileURLToPath(import.meta.url)), "seed-data");
@@ -43,28 +44,10 @@ function readJson<T>(file: string): T {
   return JSON.parse(readFileSync(join(dataDir, file), "utf8")) as T;
 }
 
-/** Converts a zone-less Eastern wall-clock time to a UTC Date, handling EST/EDT. */
+/** Converts a zone-less Eastern wall-clock time ("2026-10-04T17:30:00") to a UTC Date, handling EST/EDT. */
 function easternToUtc(local: string): Date {
-  const asUtc = new Date(`${local}Z`).getTime();
-  const offsetAt = (instant: number) => {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/New_York",
-      hourCycle: "h23",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).formatToParts(new Date(instant));
-    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
-    const wall = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
-    return wall - instant;
-  };
-  // Two passes so a time near a DST change uses the offset in effect at the result.
-  let utc = asUtc - offsetAt(asUtc);
-  utc = asUtc - offsetAt(utc);
-  return new Date(utc);
+  const [year, month, day, hour, minute] = local.split(/[-T:]/).map(Number);
+  return zonedInstant({ year: year!, month: month!, day: day!, hour: hour!, minute: minute! }, "America/New_York");
 }
 
 async function main() {
@@ -77,17 +60,19 @@ async function main() {
 
   const races = readJson<SeedRace[]>("races-2026.json");
   for (const r of races) {
-    const data = {
-      raceName: r.raceName,
-      trackName: r.trackName,
-      raceDate: easternToUtc(r.startTimeEastern),
-      totalLaps: r.totalLaps,
-    };
     await prisma.race.upsert({
       where: { nascarRaceId: r.nascarRaceId },
-      // Only touch schedule fields; never status or anything the league has done with the race.
-      update: data,
-      create: { ...data, nascarRaceId: r.nascarRaceId, seasonId: season.id },
+      // Create only. An existing race may have been edited by the league (a postponement, a renamed race),
+      // and changes to it go through the race lock, not the seed.
+      update: {},
+      create: {
+        nascarRaceId: r.nascarRaceId,
+        seasonId: season.id,
+        raceName: r.raceName,
+        trackName: r.trackName,
+        raceDate: easternToUtc(r.startTimeEastern),
+        totalLaps: r.totalLaps,
+      },
     });
   }
   console.log(`Season "${season.name}": ${races.length} races`);

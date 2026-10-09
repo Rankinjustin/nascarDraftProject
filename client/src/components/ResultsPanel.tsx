@@ -1,34 +1,26 @@
 import type { RaceDetail } from "@dnd/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api";
-
-/** One car number per line, "#" optional. */
-function carLines(text: string): string[] {
-  return text
-    .split("\n")
-    .map((l) => l.trim().replace(/^#/, ""))
-    .filter(Boolean);
-}
+import { keys, useInvalidateRace, useLive } from "../queries";
+import { CarListField, parseCarList } from "./CarListField";
+import { ConfirmRow } from "./ConfirmRow";
+import { ErrorText } from "./QueryState";
 
 /**
  * Completion and corrections (SPEC Section 8). Complete is always available on a LIVE or CORRECTING race; reopening a
  * completed one lets the commissioner fix positions, and re-completing keeps every fix.
  */
-export function ResultsPanel({ race, onChanged }: { race: RaceDetail; onChanged: () => void }) {
+export function ResultsPanel({ race }: { race: RaceDetail }) {
   const queryClient = useQueryClient();
+  const refresh = useInvalidateRace(race.id);
   const editable = race.status === "LIVE" || race.status === "CORRECTING";
-  const liveKey = ["live", race.id];
-  const live = useQuery({ queryKey: liveKey, queryFn: () => api.getLive(race.id), enabled: editable });
+  const live = useLive(race.id, editable);
   const [confirming, setConfirming] = useState(false);
   const [reopenNote, setReopenNote] = useState("");
   const [paste, setPaste] = useState("");
   const [fixes, setFixes] = useState<Record<string, string>>({});
 
-  const refresh = () => {
-    onChanged();
-    void queryClient.invalidateQueries({ queryKey: liveKey });
-  };
   const complete = useMutation({
     mutationFn: () => api.completeRace(race.id),
     onSuccess: () => {
@@ -44,19 +36,12 @@ export function ResultsPanel({ race, onChanged }: { race: RaceDetail; onChanged:
     },
   });
 
-  // Pasted finishing order maps car numbers through this race's entries.
-  const byCar = new Map(race.entries.map((e) => [e.carNumber, e]));
-  const lines = carLines(paste);
-  const unmatched = [...new Set(lines.filter((l) => !byCar.has(l)))];
-  const duplicates = [...new Set(lines.filter((l, i) => lines.indexOf(l) !== i))];
+  const parsed = parseCarList(paste, race.entries);
+  const pasted = parsed.driverIds.length;
   const replace = useMutation({
-    mutationFn: () =>
-      api.replaceResults(
-        race.id,
-        lines.map((car, i) => ({ driverId: byCar.get(car)!.driverId, finishPosition: i + 1 })),
-      ),
+    mutationFn: () => api.replaceResults(race.id, parsed.driverIds.map((driverId, i) => ({ driverId, finishPosition: i + 1 }))),
     onSuccess: (view) => {
-      queryClient.setQueryData(liveKey, view);
+      queryClient.setQueryData(keys.live(race.id), view);
       setPaste("");
     },
   });
@@ -65,7 +50,7 @@ export function ResultsPanel({ race, onChanged }: { race: RaceDetail; onChanged:
   const patch = useMutation({
     mutationFn: () => api.patchResults(race.id, pending.map(([driverId, v]) => ({ driverId, finishPosition: Number(v) }))),
     onSuccess: (view) => {
-      queryClient.setQueryData(liveKey, view);
+      queryClient.setQueryData(keys.live(race.id), view);
       setFixes({});
     },
   });
@@ -87,7 +72,7 @@ export function ResultsPanel({ race, onChanged }: { race: RaceDetail; onChanged:
         <button type="button" className="btn-secondary" disabled={reopen.isPending} onClick={() => reopen.mutate()}>
           Reopen for corrections
         </button>
-        {reopen.isError && <p className="text-sm text-red-400">{reopen.error.message}</p>}
+        <ErrorText error={reopen.error} />
       </section>
     );
   }
@@ -111,21 +96,19 @@ export function ResultsPanel({ race, onChanged }: { race: RaceDetail; onChanged:
             Current positions become finishing positions (ones entered by hand are kept), the week is scored, and the
             league is notified.
           </p>
-          <div className="flex gap-2">
-            <button type="button" className="btn-primary flex-1" disabled={complete.isPending} onClick={() => complete.mutate()}>
-              {complete.isPending ? "Completing…" : "Complete the race"}
-            </button>
-            <button type="button" className="btn-secondary" onClick={() => setConfirming(false)}>
-              Cancel
-            </button>
-          </div>
+          <ConfirmRow
+            label={complete.isPending ? "Completing…" : "Complete the race"}
+            pending={complete.isPending}
+            onConfirm={() => complete.mutate()}
+            onCancel={() => setConfirming(false)}
+          />
         </div>
       ) : (
         <button type="button" className="btn-primary" onClick={() => setConfirming(true)}>
           Complete the race
         </button>
       )}
-      {complete.isError && <p className="text-sm text-red-400">{complete.error.message}</p>}
+      <ErrorText error={complete.error} />
 
       {rows.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -156,30 +139,20 @@ export function ResultsPanel({ race, onChanged }: { race: RaceDetail; onChanged:
           >
             {pending.length ? `Save ${pending.length} fix${pending.length === 1 ? "" : "es"}` : "Save fixes"}
           </button>
-          {patch.isError && <p className="text-sm text-red-400">{patch.error.message}</p>}
+          <ErrorText error={patch.error} />
         </div>
       )}
 
-      <label>
-        <span className="label">
-          {rows.length ? "Or replace the whole finishing order" : "No results from the feed — paste the finishing order"}:
-          one car number per line, winner first
-        </span>
-        <textarea className="input min-h-32 py-2 font-mono" value={paste} onChange={(e) => setPaste(e.target.value)} />
-      </label>
-      {unmatched.length > 0 && (
-        <p className="text-sm text-amber-300">Not in this race's entries: {unmatched.map((c) => `#${c}`).join(", ")}</p>
-      )}
-      {duplicates.length > 0 && <p className="text-sm text-amber-300">Listed twice: {duplicates.map((c) => `#${c}`).join(", ")}</p>}
-      <button
-        type="button"
-        className="btn-secondary"
-        disabled={lines.length === 0 || unmatched.length > 0 || duplicates.length > 0 || replace.isPending}
-        onClick={() => replace.mutate()}
-      >
-        {lines.length ? `Save finishing order (${lines.length} cars)` : "Save finishing order"}
+      <CarListField
+        label={`${rows.length ? "Or replace the whole finishing order" : "No results from the feed — paste the finishing order"}: one car number per line, winner first`}
+        value={paste}
+        onChange={setPaste}
+        parsed={parsed}
+      />
+      <button type="button" className="btn-secondary" disabled={!parsed.valid || replace.isPending} onClick={() => replace.mutate()}>
+        {pasted ? `Save finishing order (${pasted} cars)` : "Save finishing order"}
       </button>
-      {replace.isError && <p className="text-sm text-red-400">{replace.error.message}</p>}
+      <ErrorText error={replace.error} />
     </section>
   );
 }

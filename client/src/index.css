@@ -1,5 +1,125 @@
 @import "tailwindcss";
 
+/*
+ * Colors from the league logo, mapped onto Tailwind's names so existing classes pick them up:
+ * sky = logo blue (primary), red = logo red, purple = logo magenta, yellow = logo stripes.
+ * Light mode swaps the scales under :root[data-theme="light"] (set by index.html and src/theme.ts), so a
+ * class like bg-slate-950 or text-sky-300 means "page background" or "accent text" in either mode.
+ * Use text-slate-50 rather than text-white for text on neutral surfaces; keep text-white for text on colored fills.
+ */
+:root {
+  color-scheme: dark;
+}
+
+@theme {
+  --color-sky-50: #e8f4fc;
+  --color-sky-100: #cde7f8;
+  --color-sky-200: #9dd0f1;
+  --color-sky-300: #62b3e6;
+  --color-sky-400: #2a97d8;
+  --color-sky-500: #0b88cf;
+  --color-sky-600: #027dc6;
+  --color-sky-700: #0367a4;
+  --color-sky-800: #065584;
+  --color-sky-900: #0a466b;
+  --color-sky-950: #062c46;
+  --color-red-50: #fff1f1;
+  --color-red-100: #ffe0e1;
+  --color-red-200: #ffc6c8;
+  --color-red-300: #ff9b9e;
+  --color-red-400: #ff6b70;
+  --color-red-500: #ff3d43;
+  --color-red-600: #ec2026;
+  --color-red-700: #c7161c;
+  --color-red-800: #a4171c;
+  --color-red-900: #87191d;
+  --color-red-950: #4a080a;
+  --color-purple-50: #fdf0f8;
+  --color-purple-100: #fbe2f1;
+  --color-purple-200: #f8c5e4;
+  --color-purple-300: #f197cd;
+  --color-purple-400: #e762b2;
+  --color-purple-500: #d52d95;
+  --color-purple-600: #bd1f80;
+  --color-purple-700: #9c1968;
+  --color-purple-800: #811756;
+  --color-purple-900: #6b1749;
+  --color-purple-950: #43062a;
+  --color-yellow-50: #fffbeb;
+  --color-yellow-100: #fff4c6;
+  --color-yellow-200: #ffea8f;
+  --color-yellow-300: #fdd74e;
+  --color-yellow-400: #fbc823;
+  --color-yellow-500: #eeae0b;
+  --color-yellow-600: #cc8706;
+  --color-yellow-700: #a35f09;
+  --color-yellow-800: #864a0f;
+  --color-yellow-900: #723d12;
+  --color-yellow-950: #422006;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-slate-50: oklch(12.9% 0.042 264.695);
+  --color-slate-100: oklch(20.8% 0.042 265.755);
+  --color-slate-200: oklch(27.9% 0.041 260.031);
+  --color-slate-300: oklch(37.2% 0.044 257.287);
+  --color-slate-400: oklch(44.6% 0.043 257.281);
+  --color-slate-600: oklch(70.4% 0.04 256.788);
+  --color-slate-700: oklch(86.9% 0.022 252.894);
+  --color-slate-800: oklch(92.9% 0.013 255.508);
+  --color-slate-900: #ffffff;
+  --color-slate-950: oklch(96.8% 0.007 247.896);
+  --color-sky-50: #062c46;
+  --color-sky-100: #0a466b;
+  --color-sky-200: #065584;
+  --color-sky-300: #0367a4;
+  --color-sky-400: #027dc6;
+  --color-sky-800: #9dd0f1;
+  --color-sky-900: #cde7f8;
+  --color-sky-950: #e8f4fc;
+  --color-red-50: #4a080a;
+  --color-red-100: #87191d;
+  --color-red-200: #a4171c;
+  --color-red-300: #c7161c;
+  --color-red-400: #ec2026;
+  --color-red-800: #ffc6c8;
+  --color-red-900: #ffe0e1;
+  --color-red-950: #fff1f1;
+  --color-purple-50: #43062a;
+  --color-purple-100: #6b1749;
+  --color-purple-200: #811756;
+  --color-purple-300: #9c1968;
+  --color-purple-400: #bd1f80;
+  --color-purple-800: #f8c5e4;
+  --color-purple-900: #fbe2f1;
+  --color-purple-950: #fdf0f8;
+  --color-yellow-50: #422006;
+  --color-yellow-100: #723d12;
+  --color-yellow-200: #864a0f;
+  --color-yellow-300: #a35f09;
+  --color-yellow-400: #cc8706;
+  --color-yellow-800: #ffea8f;
+  --color-yellow-900: #fff4c6;
+  --color-yellow-950: #fffbeb;
+  --color-amber-50: oklch(27.9% 0.077 45.635);
+  --color-amber-100: oklch(41.4% 0.112 45.904);
+  --color-amber-200: oklch(47.3% 0.137 46.201);
+  --color-amber-300: oklch(55.5% 0.163 48.998);
+  --color-amber-400: oklch(66.6% 0.179 58.318);
+  --color-amber-800: oklch(92.4% 0.12 95.746);
+  --color-amber-900: oklch(96.2% 0.059 95.617);
+  --color-amber-950: oklch(98.7% 0.022 95.277);
+  --color-green-50: oklch(26.6% 0.065 152.934);
+  --color-green-100: oklch(39.3% 0.095 152.535);
+  --color-green-200: oklch(44.8% 0.119 151.328);
+  --color-green-300: oklch(52.7% 0.154 150.069);
+  --color-green-400: oklch(62.7% 0.194 149.214);
+  --color-green-800: oklch(92.5% 0.084 155.995);
+  --color-green-900: oklch(96.2% 0.044 156.743);
+  --color-green-950: oklch(98.2% 0.018 155.826);
+}
+
 html,
 body,
 #root {
@@ -8,17 +128,91 @@ body,
 
 /* Shared form and surface styles. 44px minimum tap targets (SPEC Section 11). */
 @utility input {
-  @apply min-h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-base text-white placeholder:text-slate-500 focus:border-sky-500 focus:outline-none;
+  @apply min-h-11 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 text-base text-slate-50 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none;
 }
 @utility btn-primary {
-  @apply inline-flex min-h-11 items-center justify-center rounded-lg bg-sky-600 px-4 font-semibold text-white hover:bg-sky-500 disabled:opacity-50;
+  @apply inline-flex min-h-11 items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-center font-semibold text-white hover:bg-sky-500 disabled:opacity-50;
 }
 @utility btn-secondary {
-  @apply inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-700 px-4 font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50;
+  @apply inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-700 px-4 py-2 text-center font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50;
 }
 @utility card {
   @apply rounded-xl border border-slate-800 bg-slate-900 p-4;
 }
+/*
+ * One face everywhere: Russo One, the block lettering that matches the logo (SIL Open Font License, fonts/).
+ * It has a single weight, so font-bold can't make it heavier; headings are set apart by size and slant instead.
+ */
+@font-face {
+  font-family: "Russo One";
+  src: url("/fonts/RussoOne.ttf") format("truetype");
+  font-display: swap;
+}
+@theme {
+  --font-sans: "Russo One", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Russo One", ui-monospace, monospace;
+}
+@layer base {
+  html {
+    /* No faked bold from font-bold; slanted text is allowed for italics. */
+    font-synthesis: style;
+    /* Checkboxes and other native controls in the logo blue. */
+    accent-color: var(--color-sky-600);
+  }
+  h1,
+  h2 {
+    font-style: italic;
+    letter-spacing: 0.01em;
+  }
+}
+
+/* The logo's four colors as a thin bar; the same in both modes. */
+@utility racing-stripe {
+  height: 4px;
+  background: linear-gradient(90deg, #fdd74e 0 25%, #ff3d43 25% 50%, #d52d95 50% 75%, #027dc6 75%);
+}
+@utility racing-stripe-y {
+  background: linear-gradient(180deg, #fdd74e 0 25%, #ff3d43 25% 50%, #d52d95 50% 75%, #027dc6 75%);
+}
 @utility label {
   @apply mb-1 block text-sm text-slate-400;
+}
+
+/* Animations for the wheel reveal and the winner's confetti; the per-piece values come in as custom properties. */
+@theme {
+  --animate-pop-in: pop-in 0.3s ease-out;
+  --animate-slide-in: slide-in 0.3s ease-out;
+  @keyframes pop-in {
+    from {
+      transform: scale(0.6);
+      opacity: 0;
+    }
+  }
+  @keyframes slide-in {
+    from {
+      transform: translateX(-8px);
+      opacity: 0;
+    }
+  }
+}
+@keyframes wheel-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(var(--wheel-to));
+  }
+}
+@keyframes confetti-fall {
+  from {
+    transform: translate(0, -20px) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+  }
+  to {
+    transform: translate(var(--drift), 105vh) rotate(var(--spin));
+    opacity: 0.8;
+  }
 }

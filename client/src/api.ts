@@ -15,17 +15,17 @@ import type {
   QualifyingView,
   RaceDetail,
   RaceEntryView,
+  RaceInput,
   RaceSummary,
   ResultInput,
   SeasonStats,
   SeasonView,
-  StandingsView,
   TransitionReason,
   WeeklyResultView,
 } from "@dnd/shared";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
-export const APP_VERSION: string = import.meta.env.VITE_APP_VERSION;
+const APP_VERSION: string = import.meta.env.VITE_APP_VERSION;
 
 export class ApiError extends Error {
   constructor(
@@ -78,18 +78,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
-export interface CreatedUser {
+interface CreatedUser {
   user: PublicUser;
   setupLink: string;
-}
-
-export interface RaceInput {
-  raceName: string;
-  trackName: string;
-  raceDate: string;
-  nascarRaceId?: number | null;
-  totalLaps?: number | null;
-  scoringRuleKey?: string;
 }
 
 export const api = {
@@ -156,7 +147,6 @@ export const api = {
   reopenRace: (raceId: string, note?: string) => request<void>("POST", `/races/${raceId}/reopen`, { note }),
   replaceResults: (raceId: string, results: ResultInput[]) => request<LiveView>("PUT", `/races/${raceId}/results`, { results }),
   patchResults: (raceId: string, results: ResultInput[]) => request<LiveView>("PATCH", `/races/${raceId}/results`, { results }),
-  getStandings: (raceId: string) => request<StandingsView>("GET", `/races/${raceId}/standings`),
   history: (seasonId?: string) =>
     request<HistoryWeek[]>("GET", `/races/history${seasonId ? `?seasonId=${encodeURIComponent(seasonId)}` : ""}`),
   seasonStats: (seasonId: string) => request<SeasonStats>("GET", `/seasons/${seasonId}/stats`),

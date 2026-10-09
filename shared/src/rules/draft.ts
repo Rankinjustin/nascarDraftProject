@@ -23,3 +23,18 @@ export function whoseTurn(snake: string[], picksMade: number): string | null {
 export function roundForPick(overallPickNumber: number, userCount: number): number {
   return Math.ceil(overallPickNumber / userCount);
 }
+
+/** The snake for a draft order, and who is on the clock after `picksMade` picks (null once complete). */
+export function draftTurn(orderedUserIds: string[], picksMade: number): { snake: string[]; onTheClock: string | null } {
+  const snake = snakeOrder(orderedUserIds, ROUNDS);
+  return { snake, onTheClock: whoseTurn(snake, picksMade) };
+}
+
+/**
+ * One user's roster: their picks (passed in pick order) padded with null to ROUNDS slots.
+ * A null slot is empty: the draft closed before it was filled.
+ */
+export function rosterFor<P extends { userId: string }>(userId: string, picks: P[]): (P | null)[] {
+  const mine = picks.filter((p) => p.userId === userId);
+  return Array.from({ length: ROUNDS }, (_, i) => mine[i] ?? null);
+}

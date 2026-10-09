@@ -1,8 +1,8 @@
 import type { User, WeeklyResult } from "@prisma/client";
 import {
-  ROUNDS,
-  SCORING_RULES,
   rankEntries,
+  rosterFor,
+  scoringRuleFor,
   type DriverFinish,
   type HistoryWeek,
   type ResultInput,
@@ -10,17 +10,18 @@ import {
   type UserEntry,
   type WeeklyResultView,
 } from "@dnd/shared";
-import { prisma } from "../db";
-import { HttpError, notFound } from "../errors";
+import { prisma, type Db } from "../db";
+import { conflict, HttpError, notFound } from "../errors";
 import { dispatchAfterCommit } from "../notifications/notify";
-import { withRaceLock, type Tx } from "../races/lock";
-import { applyTransition } from "../races/transition";
+import { findRace, withRaceLock } from "../races/lock";
+import { applyTransition, logDraftEvent } from "../races/transition";
 import { getLiveView } from "./live";
-import { toRaceSummary } from "./races";
-import { fieldSizeFor } from "./scoring";
+import { toRaceSummary, withEntryCount } from "./races";
+import { driverFinishesOf, fieldSizeFor } from "./scoring";
+import { findSeason } from "./seasons";
 
 const notLiveOrCorrecting = () =>
-  new HttpError(409, "RACE_NOT_EDITABLE", "Results can only be entered while the race is live or reopened for corrections.");
+  conflict("RACE_NOT_EDITABLE", "Results can only be entered while the race is live or reopened for corrections.");
 
 /**
  * POST /races/:id/complete (SPEC Section 8): freezes finish positions and snapshots the week.
@@ -29,7 +30,7 @@ const notLiveOrCorrecting = () =>
 export async function completeRace(raceId: string, actor: User, now = new Date()): Promise<WeeklyResultView[]> {
   await withRaceLock(raceId, async (tx, race) => {
     if (race.status !== "LIVE" && race.status !== "CORRECTING") {
-      throw new HttpError(409, "RACE_NOT_COMPLETABLE", "Only a live race, or one reopened for corrections, can be completed.");
+      throw conflict("RACE_NOT_COMPLETABLE", "Only a live race, or one reopened for corrections, can be completed.");
     }
 
     // 2. runningPosition → finishPosition, only where it's still null.
@@ -47,21 +48,21 @@ export async function completeRace(raceId: string, actor: User, now = new Date()
     const carByDriver = new Map(entries.map((e) => [e.driverId, e.carNumber]));
 
     const rosters = order.map((o) => {
-      const mine = picks.filter((p) => p.userId === o.userId);
-      const finishes: DriverFinish[] = Array.from({ length: ROUNDS }, (_, i) => {
-        const pick = mine[i];
-        if (!pick) return { driverId: null, driverName: "No pick", carNumber: null, finishPosition: null };
-        return {
-          driverId: pick.driverId,
-          driverName: pick.driver.driverName,
-          carNumber: carByDriver.get(pick.driverId) ?? pick.driver.carNumber,
-          finishPosition: finishByDriver.get(pick.driverId) ?? null,
-        };
-      });
+      const finishes = rosterFor(o.userId, picks).map(
+        (pick): DriverFinish =>
+          pick
+            ? {
+                driverId: pick.driverId,
+                driverName: pick.driver.driverName,
+                carNumber: carByDriver.get(pick.driverId) ?? pick.driver.carNumber,
+                finishPosition: finishByDriver.get(pick.driverId) ?? null,
+              }
+            : { driverId: null, driverName: "No pick", carNumber: null, finishPosition: null },
+      );
       return { userId: o.userId, finishes };
     });
 
-    const rule = SCORING_RULES[race.scoringRuleKey] ?? SCORING_RULES.average_finish!;
+    const rule = scoringRuleFor(race.scoringRuleKey);
     const userEntries: UserEntry[] = rosters.map((r) => ({
       userId: r.userId,
       drivers: r.finishes.map((f) => ({ driverId: f.driverId, finishPosition: f.finishPosition })),
@@ -100,7 +101,11 @@ export async function reopenRace(raceId: string, actor: User, note?: string): Pr
   });
 }
 
-async function writeResults(raceId: string, actor: User, rows: ResultInput[], mode: "replace" | "patch") {
+/**
+ * Hand-entered results. "replace" (PUT /races/:id/results) is the full finishing order by hand: feed down, no
+ * nascarRaceId, missing drivers. "patch" (PATCH) is individual fixes, creating rows that don't exist.
+ */
+export async function writeResults(raceId: string, actor: User, rows: ResultInput[], mode: "replace" | "patch") {
   if (new Set(rows.map((r) => r.driverId)).size !== rows.length) {
     throw new HttpError(400, "DUPLICATE_DRIVER", "A driver appears twice in the results.");
   }
@@ -132,29 +137,17 @@ async function writeResults(raceId: string, actor: User, rows: ResultInput[], mo
       });
     }
 
-    await tx.draftEvent.create({
-      data: {
-        raceId,
-        actorUserId: actor.id,
-        type: "RESULTS_CORRECTED",
-        payload: {
-          mode,
-          changes: rows.map((r) => ({
-            driverId: r.driverId,
-            driverName: nameById.get(r.driverId),
-            before: before.get(r.driverId)?.finishPosition ?? null,
-            after: r.finishPosition,
-          })),
-        },
-      },
+    await logDraftEvent(tx, raceId, actor.id, "RESULTS_CORRECTED", {
+      mode,
+      changes: rows.map((r) => ({
+        driverId: r.driverId,
+        driverName: nameById.get(r.driverId) ?? null,
+        before: before.get(r.driverId)?.finishPosition ?? null,
+        after: r.finishPosition,
+      })),
     });
   });
 }
-
-/** PUT /races/:id/results — the full finishing order by hand (feed down, no nascarRaceId, missing drivers). */
-export const replaceResults = (raceId: string, actor: User, rows: ResultInput[]) => writeResults(raceId, actor, rows, "replace");
-/** PATCH /races/:id/results — individual fixes, creating rows that don't exist. */
-export const patchResults = (raceId: string, actor: User, rows: ResultInput[]) => writeResults(raceId, actor, rows, "patch");
 
 type WithUser = WeeklyResult & { user: { displayName: string } };
 
@@ -166,11 +159,11 @@ function toWeeklyView(w: WithUser): WeeklyResultView {
     rank: w.rank,
     scoringRuleKey: w.scoringRuleKey,
     fieldSize: w.fieldSize,
-    driverFinishes: w.driverFinishes as unknown as DriverFinish[],
+    driverFinishes: driverFinishesOf(w),
   };
 }
 
-async function weeklyResults(db: Tx | typeof prisma, raceId: string): Promise<WeeklyResultView[]> {
+async function weeklyResults(db: Db, raceId: string): Promise<WeeklyResultView[]> {
   const rows = await db.weeklyResult.findMany({
     where: { raceId },
     include: { user: true },
@@ -181,23 +174,20 @@ async function weeklyResults(db: Tx | typeof prisma, raceId: string): Promise<We
 
 /** GET /races/:id/standings — the frozen week once completed, otherwise the live projection. */
 export async function getStandings(raceId: string): Promise<StandingsView> {
-  const race = await prisma.race.findUnique({ where: { id: raceId }, select: { status: true } });
-  if (!race) throw notFound("Race");
+  const race = await findRace(raceId);
   if (race.status === "COMPLETED") return { final: true, results: await weeklyResults(prisma, raceId) };
   return { final: false, projected: (await getLiveView(raceId)).fantasyStandings };
 }
 
 /** Completed weeks, newest first, each with its frozen results. */
 export async function listHistory(seasonId?: string): Promise<HistoryWeek[]> {
-  const season = seasonId
-    ? await prisma.season.findUnique({ where: { id: seasonId } })
-    : await prisma.season.findFirst({ where: { isCurrent: true } });
+  const season = await findSeason(seasonId);
   if (!season) return [];
   const races = await prisma.race.findMany({
     where: { seasonId: season.id, status: "COMPLETED" },
     orderBy: { raceDate: "desc" },
     include: {
-      _count: { select: { entries: true } },
+      ...withEntryCount,
       weeklyResults: { include: { user: true }, orderBy: [{ rank: "asc" }, { user: { displayName: "asc" } }] },
     },
   });

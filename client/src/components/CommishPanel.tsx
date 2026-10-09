@@ -3,6 +3,8 @@ import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api";
+import { ConfirmRow } from "./ConfirmRow";
+import { ErrorText } from "./QueryState";
 
 /**
  * Collapsed by default so nothing here is tapped by accident (SPEC Section 11). The server enforces every
@@ -97,20 +99,18 @@ function RevertLast({ raceId, state, onState }: { raceId: string; state: DraftSt
     <div className="flex flex-col gap-2">
       <h3 className="font-semibold">Revert last pick</h3>
       {confirming ? (
-        <div className="flex gap-2">
-          <button type="button" className="btn-primary flex-1" disabled={revert.isPending} onClick={() => revert.mutate()}>
-            Revert pick {last.overallPickNumber} ({last.driverName})
-          </button>
-          <button type="button" className="btn-secondary" onClick={() => setConfirming(false)}>
-            Cancel
-          </button>
-        </div>
+        <ConfirmRow
+          label={`Revert pick ${last.overallPickNumber} (${last.driverName})`}
+          pending={revert.isPending}
+          onConfirm={() => revert.mutate()}
+          onCancel={() => setConfirming(false)}
+        />
       ) : (
         <button type="button" className="btn-secondary" onClick={() => setConfirming(true)}>
           Revert pick {last.overallPickNumber}: {last.displayName} — {last.driverName}
         </button>
       )}
-      {revert.isError && <p className="text-sm text-red-400">{revert.error.message}</p>}
+      <ErrorText error={revert.error} />
     </div>
   );
 }
@@ -159,7 +159,7 @@ function SwapPick({ raceId, state, onState }: { raceId: string; state: DraftStat
       >
         Swap
       </button>
-      {swap.isError && <p className="text-sm text-red-400">{swap.error.message}</p>}
+      <ErrorText error={swap.error} />
     </div>
   );
 }
@@ -214,7 +214,7 @@ function Destructive({
           </button>
         </>
       )}
-      {run.isError && <p className="text-sm text-red-400">{run.error.message}</p>}
+      <ErrorText error={run.error} />
     </div>
   );
 }

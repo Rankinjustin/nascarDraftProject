@@ -9,8 +9,8 @@ import { BROADCAST_KINDS, TURN_KINDS, type NotificationChannel } from "./types";
 export const discordChannel: NotificationChannel = {
   key: "discord",
   broadcastAsOne: true,
+  // Only registered when DISCORD_WEBHOOK_URL is set (notify.ts).
   async canReach(payload) {
-    if (!env.DISCORD_WEBHOOK_URL) return false;
     return payload.userId === null ? BROADCAST_KINDS.includes(payload.kind) : TURN_KINDS.includes(payload.kind);
   },
   async send(payload) {

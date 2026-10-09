@@ -58,15 +58,15 @@ Commissioner actions are privileged but **not silent** — every one of them wri
 
 ## 2. Tech Stack
 
-**Frontend:** React + Vite + TypeScript, Tailwind CSS, TanStack Query, React Router, Lucide React icons, `framer-motion` (wheel + confetti). Installable PWA (manifest + service worker) — required for iOS push (Section 14).
+**Frontend:** React + Vite + TypeScript, Tailwind CSS, TanStack Query, React Router, Lucide React icons, CSS animations for the wheel and confetti (no animation library). Installable PWA (manifest + service worker) — required for iOS push (Section 14).
 
 **Backend:** Node.js + Express + TypeScript, Zod validation, Prisma ORM, PostgreSQL, `argon2` for password hashing, `node-cron` for scheduled jobs.
 
 **Shared:** a `shared/` directory containing TypeScript types and the pure rule functions, imported by both client and server. This is what keeps the two halves from drifting.
 
-**Deploy:** Frontend on Vercel/Netlify. Backend + Postgres on Render or Railway. **The backend must be on an always-on instance, not a sleeping free tier** — a service that spins down on idle will not wake up to poll a live race or send a pick reminder. This is the one place worth spending money — and it includes the **database**: free Postgres tiers expire (Render deletes its free databases after 30 days), which would take the whole season's history with it. Use a paid database with backups. Run exactly **one** backend instance; the cron jobs assume they are the only copy running.
+**Deploy:** one always-on Debian server (a Google Cloud e2-micro), set up and updated by `deploy/gcp/dnd.sh` — step-by-step guide in `deploy/gcp/README.md`. On it: Postgres (with nightly `pg_dump` backups, plus one before every deploy), the Express app run by systemd straight from TypeScript through `tsx` (which is why `tsx` is a production dependency of `server/`), and Caddy in front for HTTPS (automatic certificates for the league's domain, e.g. a DuckDNS name). **Express serves both the API and the built client** from one origin (Section 5). The server must never sleep — a host that spins down on idle will not wake up to poll a live race or send a pick reminder. Run exactly **one** app instance; the cron jobs assume they are the only copy running. Pushes to `master` run the typecheck and tests in GitHub Actions and, if they pass, ship the build to the server (`.github/workflows/deploy.yml`).
 
-**Deploy freeze on race weekends.** A deploy restarts that one instance: the feed cache is lost and a qualifying capture in progress is interrupted. Don't deploy the backend from the start of qualifying until the race is completed. Frontend deploys are safe at any time (see "App updates", Section 11).
+**Deploy freeze on race weekends.** Every deploy restarts that one process, client changes included: the feed cache is lost and a qualifying capture in progress is interrupted. So `dnd deploy` — manual or from CI — refuses from an hour before qualifying (two days before the race when qualifying's time isn't known) until the race is completed, unless given `--force`. A race left `LIVE` stops blocking a day after its start, like the stale-`LIVE` rule in Section 9. Clients already running pick up a new build through the service worker (see "App updates", Section 11).
 
 **Monitoring.** Scheduled jobs fail silently — a dead sweeper on a Thursday shows up as "nobody got notified," discovered days later. So:
 - `GET /api/health` (public, no data) returns `{ ok, jobs: { deadline, poller, sweeper } }` with each job's last successful run time, and returns **503** if any job hasn't run in 3× its interval.
@@ -81,313 +81,7 @@ Commissioner actions are privileged but **not silent** — every one of them wri
 
 ## 3. Database Schema (`schema.prisma`)
 
-```prisma
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-generator client {
-  provider = "prisma-client-js"
-}
-
-enum Role {
-  MEMBER
-  COMMISSIONER
-}
-
-enum RaceStatus {
-  UPCOMING    // created, no draft order yet
-  DRAFTING    // order set, picks in progress (typically Wednesday → Sunday)
-  LOCKED      // draft closed (all picks made, or deadline passed), race not yet green
-  LIVE        // race running, poller writing results
-  COMPLETED   // finish positions frozen, weekly results snapshotted
-  CORRECTING  // commissioner reopened a completed race to fix results; poller ignores it
-}
-
-enum DraftEventType {
-  ORDER_GENERATED
-  ORDER_REGENERATED
-  PICK_MADE
-  PICK_MADE_ON_BEHALF
-  PICK_REVERTED
-  PICK_SWAPPED
-  DRAFT_RESET
-  STATUS_CHANGED
-  RESULTS_CORRECTED
-}
-
-model User {
-  id                   String   @id @default(uuid())
-  phoneNumber          String   @unique   // E.164, e.g. "+19205551234"
-  email                String?  @unique   // optional, not used for auth
-  passwordHash         String?            // null until the setup link is used
-  displayName          String
-  role                 Role     @default(MEMBER)
-  isActive             Boolean  @default(true)
-  notificationsEnabled Boolean  @default(true)
-  discordUserId        String?            // optional; lets Discord turn pings @mention the right person
-  createdAt            DateTime @default(now())
-
-  draftOrders   DraftOrder[]
-  setupTokens   SetupToken[]
-  picks         Pick[]         @relation("PickOwner")
-  picksMade     Pick[]         @relation("PickCreator")
-  weeklyResults WeeklyResult[]
-  draftEvents   DraftEvent[]
-  sessions      Session[]
-  pushSubs      PushSubscription[]
-}
-
-model Session {
-  id        String   @id @default(uuid())
-  userId    String
-  tokenHash String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-// Single-use link the commissioner hands out for initial password set / reset.
-model SetupToken {
-  id        String    @id @default(uuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model Season {
-  id        String  @id @default(uuid())
-  year      Int
-  seriesId  Int     @default(1)   // 1 = Cup, 2 = Xfinity, 3 = Trucks
-  name      String
-  isCurrent Boolean @default(false) // service layer ensures at most one is true
-
-  races Race[]
-
-  @@unique([year, seriesId])
-}
-
-model Race {
-  id             String     @id @default(uuid())
-  seasonId       String
-  nascarRaceId   Int?       @unique   // required before the poller will touch this race (Section 7)
-  raceName       String
-  trackName      String
-  raceDate       DateTime             // published race start time, UTC. Also the pick deadline.
-  status         RaceStatus @default(UPCOMING)
-  wentLiveAt     DateTime?            // first LIVE transition; never cleared, even by false_start
-  scoringRuleKey String     @default("average_finish")
-  totalLaps      Int?
-  currentLap     Int?
-  flagState      Int?
-  feedUpdatedAt  DateTime?
-  checkeredSeenAt DateTime?           // first time the feed reported a checkered flag for this race
-  completedAt    DateTime?
-  createdAt      DateTime   @default(now())
-
-  season        Season             @relation(fields: [seasonId], references: [id])
-  entries       RaceEntry[]
-  draftOrders   DraftOrder[]
-  picks         Pick[]
-  qualifying    QualifyingResult[]
-  results       RaceResult[]
-  weeklyResults WeeklyResult[]
-  draftEvents   DraftEvent[]
-
-  @@index([seasonId, raceDate])
-}
-
-model Driver {
-  id             String  @id @default(uuid())
-  nascarDriverId Int?    @unique   // null for a driver added by hand; Postgres allows many nulls here
-  driverName     String
-  carNumber      String
-  teamName       String?
-  isActive       Boolean @default(true)
-
-  entries    RaceEntry[]
-  picks      Pick[]
-  qualifying QualifyingResult[]
-  results    RaceResult[]
-}
-
-// The list of drivers actually entered in a given race.
-// Picks are validated against this — you cannot draft a driver who isn't running.
-model RaceEntry {
-  id         String  @id @default(uuid())
-  raceId     String
-  driverId   String
-  carNumber  String
-  isEligible Boolean @default(true)  // commissioner can strike a driver (withdrawal, etc.)
-
-  race   Race   @relation(fields: [raceId], references: [id], onDelete: Cascade)
-  driver Driver @relation(fields: [driverId], references: [id])
-
-  @@unique([raceId, driverId])
-  @@index([raceId])
-}
-
-model DraftOrder {
-  id           String @id @default(uuid())
-  raceId       String
-  userId       String
-  pickPosition Int    // 1..N
-
-  race Race @relation(fields: [raceId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id])
-
-  @@unique([raceId, userId])
-  @@unique([raceId, pickPosition])
-}
-
-model Pick {
-  id                String   @id @default(uuid())
-  raceId            String
-  userId            String   // whose roster this driver belongs to
-  driverId          String
-  createdByUserId   String   // who physically made the pick (= userId, unless commish picked on behalf)
-  overallPickNumber Int      // 1..(N*3), contiguous
-  roundNumber       Int      // 1, 2, or 3
-  createdAt         DateTime @default(now())
-
-  race    Race   @relation(fields: [raceId], references: [id], onDelete: Cascade)
-  user    User   @relation("PickOwner", fields: [userId], references: [id])
-  creator User   @relation("PickCreator", fields: [createdByUserId], references: [id])
-  driver  Driver @relation(fields: [driverId], references: [id])
-
-  @@unique([raceId, driverId])           // no duplicate drivers in a race
-  @@unique([raceId, overallPickNumber])  // backstop; the race lock is the real guard
-  @@index([raceId, userId])
-}
-
-// Captured while qualifying is the live session. The live feed does NOT retain
-// qualifying data once the next session starts, so this must be captured, not fetched later.
-// Qualifying usually happens while the draft is still running.
-model QualifyingResult {
-  id              String   @id @default(uuid())
-  raceId          String
-  driverId        String
-  startPosition   Int
-  qualifyingTime  Float?   // seconds; null when rained out or lineup set by formula
-  qualifyingSpeed Float?   // mph
-  isPole          Boolean  @default(false)
-  source          String   @default("feed") // "feed" | "manual"
-  createdAt       DateTime @default(now())
-
-  race   Race   @relation(fields: [raceId], references: [id], onDelete: Cascade)
-  driver Driver @relation(fields: [driverId], references: [id])
-
-  @@unique([raceId, driverId])
-  @@index([raceId])
-  // NOTE: deliberately NO unique on [raceId, startPosition] — see Section 7,
-  // "Qualifying capture". Positions shift during a live session and a unique
-  // constraint there makes whole-grid replacement awkward.
-}
-
-model RaceResult {
-  id              String   @id @default(uuid())
-  raceId          String
-  driverId        String
-  runningPosition Int      // live, overwritten every poll while LIVE
-  finishPosition  Int?     // filled at completion; scoring reads this
-  lapsCompleted   Int      @default(0)
-  status          String   @default("RUNNING") // RUNNING, OUT, FINISHED
-  source          String   @default("feed")    // "feed" | "manual" — manual rows were created by the commissioner
-  updatedAt       DateTime @updatedAt
-
-  race   Race   @relation(fields: [raceId], references: [id], onDelete: Cascade)
-  driver Driver @relation(fields: [driverId], references: [id])
-
-  @@unique([raceId, driverId])
-}
-
-// Frozen snapshot of a completed week. Season stats read from here,
-// so a later feed correction can never silently rewrite history.
-model WeeklyResult {
-  id             String   @id @default(uuid())
-  raceId         String
-  userId         String
-  score          Float
-  rank           Int
-  scoringRuleKey String
-  fieldSize      Int      // the fieldSize used to score DNFs/DNSs this week
-  driverFinishes Json     // [{ driverId | null, driverName, carNumber, finishPosition }] — always 3 entries; empty slots have driverId null
-  createdAt      DateTime @default(now())
-
-  race Race @relation(fields: [raceId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id])
-
-  @@unique([raceId, userId])
-  @@index([userId])
-}
-
-model PushSubscription {
-  id         String    @id @default(uuid())
-  userId     String
-  endpoint   String    @unique   // upsert on endpoint: a new login on the same device moves the row
-  p256dh     String
-  auth       String
-  userAgent  String?
-  createdAt  DateTime  @default(now())
-  lastUsedAt DateTime?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-// Claim-then-send ledger. Guarantees a user is notified at most once per slot per
-// channel per kind, and lets the sweeper retry sends that failed.
-model NotificationLog {
-  id                String   @id @default(uuid())
-  raceId            String
-  userId            String   @default("BROADCAST") // sentinel, NOT null — see note below
-  channel           String   // "web_push", "discord"
-  kind              String   // see Section 14
-  overallPickNumber Int      @default(0)           // sentinel, NOT null
-  succeeded         Boolean  @default(false)
-  claimedAt         DateTime?                       // set by whoever is currently sending; see Section 14
-  attempts          Int      @default(0)
-  error             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  @@unique([raceId, userId, channel, kind, overallPickNumber])
-  @@index([raceId])
-}
-// WHY SENTINELS INSTEAD OF NULL: in PostgreSQL, NULL is never equal to NULL,
-// so a unique constraint containing a nullable column does not dedupe rows where
-// that column is null. Broadcast notifications (no specific user, no pick number)
-// would silently insert a new row on every retry and notify the league repeatedly.
-// Sentinel values make the constraint actually fire.
-// "BROADCAST" is used only for channels that deliver a broadcast as ONE message (Discord).
-// Web-push broadcasts write one row per recipient userId, so a failure for one phone
-// is retried for that phone only.
-
-model DraftEvent {
-  id          String         @id @default(uuid())
-  raceId      String
-  actorUserId String?        // null = the system (cron job, deadline, poller)
-  type        DraftEventType
-  payload     Json
-  createdAt   DateTime       @default(now())
-
-  race  Race  @relation(fields: [raceId], references: [id], onDelete: Cascade)
-  actor User? @relation(fields: [actorUserId], references: [id])
-
-  @@index([raceId, createdAt])
-}
-```
+The schema lives in **`server/prisma/schema.prisma`** — read it there; it is the source of truth and carries its own comments on the non-obvious parts (the notification-log sentinels, why `QualifyingResult` has no unique on start position).
 
 ### Notes on schema decisions
 
@@ -396,6 +90,9 @@ model DraftEvent {
 - **`CORRECTING` status** — a reopened completed race. It is a separate state from `LIVE` precisely so the poller never writes to it. Reopening as `LIVE` would let the poller pour next week's practice data into last week's results.
 - **`raceDate` is the published race start time and the pick deadline.** Enter the start time from NASCAR's official schedule — this is usually the TV start, and the green flag comes 10–20 minutes later. Closing picks slightly before the green is deliberate: nobody can pick after seeing the first lap. If a race is postponed, the commissioner edits `raceDate` (see "Postponements", Section 6).
 - **`wentLiveAt`** — set the first time a race transitions to `LIVE` and never cleared. `checkTransition` uses it to refuse reopening the draft of a race that has already been running, even after a `false_start`.
+- **No `User.email`.** Login is phone number + password, and nothing sends email; an unused column only invites someone to start relying on it.
+- **No `Driver.isActive`.** Who can be drafted is decided per race by `RaceEntry` (and its `isEligible` flag), not by a global driver flag.
+- **No standalone `@@index([raceId])` on `RaceEntry`, `QualifyingResult`, or `NotificationLog`.** Each has a unique constraint that starts with `raceId`, and its index already serves lookups by race.
 - **`Driver.nascarDriverId` is nullable** so the commissioner can add a one-off driver by hand without knowing NASCAR's internal ID. The poller backfills it (Section 7).
 - **`RaceResult.source`** — `"manual"` rows come from the commissioner's results entry (Section 8). The poller never writes to a race once it is `COMPLETED` or `CORRECTING`, so manual rows can only be overwritten by the feed while the race is still `LIVE`, and only `runningPosition` — never `finishPosition`.
 - **`nascarRaceId` is nullable** — you'll create the race and run the whole draft before you necessarily know it. It must be set before the race weekend, because the poller refuses to act on a race without it (Section 7).
@@ -525,13 +222,11 @@ Identity and delivery are separate decisions here. The account is keyed to a pho
 
 Decide this in Phase 1, before there's anything else to debug.
 
-Safari (every iPhone) blocks third-party cookies by default, **even with `SameSite=None; Secure`**. `vercel.app`, `netlify.app`, and `onrender.com` are all on the Public Suffix List, so a Vercel frontend talking directly to a Render API is cross-site no matter how the cookie is configured. That setup produces a working login endpoint followed by a permanently logged-out app on every iPhone.
+Safari (every iPhone) blocks third-party cookies by default, **even with `SameSite=None; Secure`**. A frontend and an API on different sites — say, two hosts' default subdomains, which sit on the Public Suffix List — produce a working login endpoint followed by a permanently logged-out app on every iPhone, no matter how the cookie is configured.
 
-Use **one** of these:
-- **Proxy rewrite (simplest, free):** a Vercel/Netlify rewrite sends `/api/*` to the backend. The browser only ever talks to the frontend's origin, so the API is same-origin. `VITE_API_BASE_URL=/api`.
-- **Custom domain:** `app.example.com` (frontend) and `api.example.com` (backend). Same registrable domain = same site. Requires CORS with `credentials: true` for the exact frontend origin, and `credentials: "include"` on client fetches.
+**Chosen: one origin.** On the single server (Section 2), Caddy terminates HTTPS and proxies everything to Express, which serves the API under `/api` and the built client (`client/dist`) for every other path. The browser only ever talks to one origin, so the API is same-origin and no CORS is needed. `VITE_API_BASE_URL=/api`; in development the Vite dev server proxies `/api` to the API the same way.
 
-Either way the cookie is `HttpOnly; Secure; SameSite=Lax; Path=/`.
+The cookie is `HttpOnly; Secure; SameSite=Lax; Path=/`.
 
 **CSRF:** `SameSite=Lax` covers most of it. Additionally, mutating routes must require `Content-Type: application/json` and reject requests whose `Origin` header is present and doesn't match `FRONTEND_ORIGIN`. A few lines of middleware.
 
@@ -547,7 +242,7 @@ Either way the cookie is `HttpOnly; Secure; SameSite=Lax; Path=/`.
 - No public signup route. The commissioner creates accounts (phone number + display name) on the admin page or via the seed script. Each new account gets a single-use setup link; the commissioner sends it however the group already talks — group chat, a text from their own phone, Discord. No transactional email or SMS infrastructure required, which is the whole point. **The seed script prints a setup link for every account it creates, including the commissioners'** — on a fresh database that's the only way anyone can log in for the first time.
 - Setup tokens live in `SetupToken`. Store only a hash. Expire after 7 days, set `usedAt` on consumption, reject any token that is expired or already used. Issuing a new token invalidates outstanding ones for that user. The same mechanism is password reset: the commissioner reissues a link.
 - **Setting a password deletes all of that user's existing sessions**, then creates a fresh one. Otherwise a reset doesn't actually lock anyone out.
-- Rate limit `POST /api/auth/login` to 10 attempts per 15 minutes, keyed on **both** IP and normalized phone number. **Behind the proxy rewrite, the backend sees the proxy's IP, not the phone's** — without configuration, all nine users would share one rate-limit bucket. Set Express `trust proxy` to the number of proxy hops actually in front of the app (Vercel/Netlify rewrite plus the host's load balancer; verify by logging `req.ip` and `X-Forwarded-For` from a real phone in Phase 1) so `req.ip` is the client address. If the client IP can't be recovered reliably, key on phone number alone. (Known trade-off: anyone can lock a specific friend out for 15 minutes by spamming their number. Acceptable for a private league; the commissioner can reissue a setup link.)
+- Rate limit `POST /api/auth/login` to 10 attempts per 15 minutes, keyed on **both** IP and normalized phone number. **Behind Caddy, the app sees the proxy's IP, not the phone's** — without configuration, all nine users would share one rate-limit bucket. Set Express `trust proxy` to the number of proxy hops actually in front of the app (`TRUST_PROXY=1` for Caddy on the single server; verify by logging `req.ip` and `X-Forwarded-For` from a real phone) so `req.ip` is the client address. If the client IP can't be recovered reliably, key on phone number alone. (Known trade-off: anyone can lock a specific friend out for 15 minutes by spamming their number. Acceptable for a private league; the commissioner can reissue a setup link.)
 - **Never reveal whether a phone number exists.** A wrong number and a wrong password both return the same generic 401, **and take the same time**: when no user matches, still run `argon2.verify` against a fixed dummy hash.
 
 **Swappability:** put this behind an interface so phone OTP can drop in later without touching route handlers.
@@ -685,6 +380,7 @@ export interface NormalizedRaceFeed {
 - **Cacher endpoints — confirmed 2026-10-02.** NASCAR's CDN serves static JSON alongside the live feed. Samples are saved in `server/test/fixtures/`:
   - `/cacher/{year}/race_list_basic.json` — the season schedule, keyed `series_1` / `series_2` / `series_3`, with `race_id` (this is `nascarRaceId`), `race_name`, `track_name`, `race_type_id` (1 = points race, 2 = exhibition), `scheduled_laps`, and start times as **zone-less Eastern wall-clock strings** (`date_scheduled` = original, `race_date` = current, which differs after a postponement). The seed uses this to fill `nascarRaceId` for every race.
   - `/cacher/{year}/{seriesId}/{raceId}/weekend-feed.json` — `weekend_race[0].results[]` has the official finishing order (`finishing_position`, `starting_position`, `car_number`, `driver_id`, `driver_fullname`, `team_name`, `laps_completed`, `finishing_status`), and `weekend_runs[]` has each session (`run_type` 2 = qualifying) with its own results. This is a candidate source for the entry-list import, a missed-qualifying backfill, and a manual-results prefill — verify before a weekend that it is populated *before* the race, not just after.
+  - The same file's `weekend_race[].schedule[]` lists the weekend's events (`event_name`, `start_time_utc` with no zone suffix, `run_type`). The entry-list import stores the `run_type` 2 entry as `Race.qualifyingAt`; the commissioner can edit it on the admin race page. The top-level `qualifying_date` is a `1900-01-01` placeholder and is not used.
   - `/cacher/drivers.json` — every driver NASCAR has on file (all series, historical), keyed `Nascar_Driver_ID`. Not useful for the current field; use a recent weekend feed instead.
   - The live feed's `flag_state` read **9** (with `laps_to_go: 0` and empty `vehicles`) the Friday after a finished race — not the guessed 4. Confirm the real checkered value on a race day before writing `checkeredSeenAt` logic.
 
@@ -813,7 +509,7 @@ POST   /auth/set-password          (public)  { token, password } → kills old s
 ```
 GET    /users                        [C]     → all users incl. inactive
 POST   /users                        [C]     { phoneNumber, displayName, role? } → user + setup link
-PATCH  /users/:id                    [C]     { displayName?, role?, isActive?, discordUserId? }
+PATCH  /users/:id                    [C]     { phoneNumber?, displayName?, role?, isActive?, discordUserId? }
 POST   /users/:id/setup-link         [C]     → new single-use link (invalidates outstanding ones)
 PATCH  /users/me/notifications               { notificationsEnabled }
 ```
@@ -821,8 +517,6 @@ PATCH  /users/me/notifications               { notificationsEnabled }
 **Seasons**
 ```
 GET    /seasons                              → list, newest first; marks the isCurrent one
-POST   /seasons                      [C]     { year, seriesId?, name, isCurrent? } → next year's season
-PATCH  /seasons/:id                  [C]     { name?, isCurrent? } → setting isCurrent clears it on all others
 ```
 
 **Races**
@@ -831,7 +525,7 @@ GET    /races                                → list, filterable by seasonId (d
 GET    /races/current                        → the race in focus (see below)
 GET    /races/:id                            → race + entries + draft order + picks
 POST   /races                        [C]
-PATCH  /races/:id                    [C]     → edit metadata only (name, track, raceDate, nascarRaceId, scoringRuleKey)
+PATCH  /races/:id                    [C]     → edit metadata only (raceName, trackName, raceDate, qualifyingAt, trackMapUrl, imageUrl, nascarRaceId, totalLaps, scoringRuleKey)
 POST   /races/:id/status             [C]     { reason, note? } → status override, validated by checkTransition
 POST   /races/:id/complete           [C]
 POST   /races/:id/reopen             [C]
@@ -1183,11 +877,12 @@ Create `.env.example` in Phase 1 with every one of these present — discovering
 
 ```
 DATABASE_URL=              # Postgres connection string
+TEST_DATABASE_URL=         # integration tests only: a separate database whose name ends in _test; wiped every run
 NODE_ENV=
 PORT=
 
 SESSION_COOKIE_NAME=       # e.g. dnd_session
-FRONTEND_ORIGIN=           # exact frontend URL; used for the Origin check (and CORS on the custom-domain setup)
+FRONTEND_ORIGIN=           # exact frontend URL (https://<domain> on the server); used for the Origin check
 TRUST_PROXY=               # proxy hops in front of the API, for req.ip (Section 5); 0 locally
 
 VAPID_PUBLIC_KEY=          # web-push; generate once, never rotate casually
@@ -1208,7 +903,9 @@ PICK_REMINDER_HOURS=       # 12
 DEADLINE_WARNING_HOURS=    # 12
 ```
 
-Frontend: `VITE_API_BASE_URL` (`/api` with the proxy rewrite), `VITE_VAPID_PUBLIC_KEY`, and `VITE_APP_VERSION` (set by the build).
+Frontend (`client/.env.example`): `VITE_API_BASE_URL` (`/api`; same origin), `VITE_VAPID_PUBLIC_KEY`, `VITE_APP_VERSION` (normally unset — the build stamps its own time; read from the shell environment only), and `VITE_APP_NAME` (the name shown in the app; blank uses the built-in default).
+
+Deploy only: `APP_NAME` in the server's `/etc/draft-and-draft/server.env`, which `dnd deploy` passes to the client build as `VITE_APP_NAME` (`deploy/gcp/README.md`).
 
 ### Capture feed fixtures at the first opportunity
 

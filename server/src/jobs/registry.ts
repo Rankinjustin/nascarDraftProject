@@ -1,7 +1,4 @@
-/**
- * Scheduled jobs report each successful run here; GET /api/health reads it.
- * Jobs register as they're built (deadline, poller, sweeper in later phases).
- */
+/** Scheduled jobs (deadline, sweeper, poller) report each successful run here; GET /api/health reads it. */
 interface JobState {
   intervalMs: number;
   lastRunAt: Date | null;

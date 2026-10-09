@@ -11,7 +11,7 @@ export interface AuthProvider {
   challenge?(input: unknown): Promise<void>;
 }
 
-export const loginBody = z.object({
+const loginBody = z.object({
   phoneNumber: z.string().max(40),
   password: z.string().min(1).max(200),
 });

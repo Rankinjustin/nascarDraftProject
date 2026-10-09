@@ -6,6 +6,7 @@ import {
   liveFeedSnapshot,
   normalizeEntryList,
   normalizeLiveFeed,
+  normalizeQualifyingStart,
   refreshLiveFeed,
   setLiveFeedCache,
 } from "./nascarFeed";
@@ -79,5 +80,17 @@ describe("normalizeEntryList", () => {
 
   it("rejects a feed for a different race", () => {
     expect(() => normalizeEntryList(fixture("cacher-2026-1-5630-weekend-feed-prerace-2026-10-02.json"), 1)).toThrow(FeedShapeError);
+  });
+});
+
+describe("normalizeQualifyingStart", () => {
+  it("reads qualifying's scheduled start from the weekend feed, as UTC", () => {
+    const start = normalizeQualifyingStart(fixture("cacher-2026-1-5630-weekend-feed-prerace-2026-10-02.json"), 5630);
+    expect(start?.toISOString()).toBe("2026-10-03T21:35:00.000Z");
+  });
+
+  it("returns null when the race or its qualifying entry is missing", () => {
+    expect(normalizeQualifyingStart(fixture("cacher-2026-1-5630-weekend-feed-prerace-2026-10-02.json"), 1)).toBeNull();
+    expect(normalizeQualifyingStart({ weekend_race: [{ race_id: 5, schedule: [{ run_type: 3, start_time_utc: "2026-10-04T21:30:00" }] }] }, 5)).toBeNull();
   });
 });

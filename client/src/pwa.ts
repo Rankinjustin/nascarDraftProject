@@ -93,6 +93,18 @@ export async function currentPushSubscription(): Promise<PushSubscription | null
   return (await registration?.pushManager.getSubscription()) ?? null;
 }
 
+function saveSubscription(subscription: PushSubscription): Promise<void> {
+  const { p256dh, auth } = subscription.toJSON().keys ?? {};
+  if (!p256dh || !auth) throw new Error("This browser returned an incomplete push subscription.");
+  return api.subscribePush({ endpoint: subscription.endpoint, keys: { p256dh, auth } });
+}
+
+/** Re-sends this device's subscription, so a device subscribed under someone else's login moves to the current user. */
+export async function syncPushSubscription(): Promise<void> {
+  const subscription = await currentPushSubscription();
+  if (subscription) await saveSubscription(subscription);
+}
+
 /** Must run from a tap: browsers only show the permission prompt in response to a user gesture. */
 export async function enablePush(): Promise<void> {
   if (!pushSupported()) throw new Error("This browser can't receive push notifications.");
@@ -104,8 +116,7 @@ export async function enablePush(): Promise<void> {
   const subscription =
     (await registration.pushManager.getSubscription()) ??
     (await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(VAPID_PUBLIC_KEY) }));
-  const json = subscription.toJSON();
-  await api.subscribePush({ endpoint: subscription.endpoint, keys: { p256dh: json.keys!.p256dh!, auth: json.keys!.auth! } });
+  await saveSubscription(subscription);
 }
 
 export async function disablePush(): Promise<void> {

@@ -1,4 +1,5 @@
-import type { Race, Role } from "@prisma/client";
+import type { Driver, Race, Role } from "@prisma/client";
+import { roundForPick } from "@dnd/shared";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { createApp } from "../src/app";
@@ -73,6 +74,24 @@ export async function makeDrivers(count: number) {
     drivers.push(await prisma.driver.create({ data: { driverName: `Driver ${i}`, carNumber: String(i) } }));
   }
   return drivers;
+}
+
+/** Enters each driver in the race at their own car number. */
+export async function enterDrivers(raceId: string, drivers: Driver[]) {
+  await prisma.raceEntry.createMany({ data: drivers.map((d) => ({ raceId, driverId: d.id, carNumber: d.carNumber })) });
+}
+
+/**
+ * Test fixture: a draft order in `userIds` order, then `picks` ([userId, driverId]) as slots 1, 2, 3… — picks are
+ * written directly, so they needn't follow the snake. A user with fewer than 3 picks has empty slots.
+ */
+export async function draftRace(raceId: string, userIds: string[], picks: [string, string][]) {
+  await prisma.draftOrder.createMany({ data: userIds.map((userId, i) => ({ raceId, userId, pickPosition: i + 1 })) });
+  for (const [i, [userId, driverId]] of picks.entries()) {
+    await prisma.pick.create({
+      data: { raceId, userId, createdByUserId: userId, driverId, overallPickNumber: i + 1, roundNumber: roundForPick(i + 1, userIds.length) },
+    });
+  }
 }
 
 export interface ApiResponse<T = any> {

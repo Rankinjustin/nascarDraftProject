@@ -41,6 +41,11 @@ export const SCORING_RULES: Record<string, ScoringRule> = {
 
 export const DEFAULT_SCORING_RULE_KEY = averageFinish.key;
 
+/** The rule for a stored key; an unknown key falls back to the default rule. */
+export function scoringRuleFor(key: string): ScoringRule {
+  return SCORING_RULES[key] ?? SCORING_RULES[DEFAULT_SCORING_RULE_KEY]!;
+}
+
 /** Best score first. Exact ties share a rank (1, 1, 3); every rank-1 row is a weekly winner. */
 export function rankEntries(
   entries: UserEntry[],

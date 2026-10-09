@@ -1,26 +1,22 @@
 import type { User } from "@prisma/client";
 import {
   ROUNDS,
+  draftTurn,
   roundForPick,
-  snakeOrder,
-  whoseTurn,
   type AvailableDriver,
   type DraftEventView,
   type DraftState,
 } from "@dnd/shared";
-import { prisma } from "../db";
-import { HttpError, isUniqueViolation, notFound } from "../errors";
+import { prisma, type Db } from "../db";
+import { conflict, HttpError, isUniqueViolation, notFound } from "../errors";
 import { clearAfterRegenerate, clearAfterReset, clearAfterRevert } from "../notifications/ledger";
 import { dispatchAfterCommit, type Notice } from "../notifications/notify";
-import { withRaceLock, type Tx } from "../races/lock";
+import { findRace, withRaceLock, type Tx } from "../races/lock";
 import { shuffle } from "../races/shuffle";
-import { applyTransition } from "../races/transition";
+import { applyTransition, logDraftEvent } from "../races/transition";
 import { byCarNumber } from "./entries";
-import { toRaceSummary } from "./races";
+import { toOrderView, toPickView, toRaceSummary } from "./races";
 
-type Db = Tx | typeof prisma;
-
-const conflict = (code: string, message: string) => new HttpError(409, code, message);
 const picksClosed = () => conflict("PICKS_CLOSED", "Picks are closed: the race start time has passed.");
 const staleBoard = () => conflict("STALE_BOARD", "Someone just picked — here's the updated board.");
 const notEditable = () =>
@@ -30,8 +26,7 @@ const notEditable = () =>
 async function draftContext(db: Db, raceId: string) {
   const order = await db.draftOrder.findMany({ where: { raceId }, orderBy: { pickPosition: "asc" }, include: { user: true } });
   const picksMade = await db.pick.count({ where: { raceId } });
-  const snake = snakeOrder(order.map((o) => o.userId), ROUNDS);
-  return { order, snake, picksMade, onTheClock: whoseTurn(snake, picksMade) };
+  return { order, picksMade, ...draftTurn(order.map((o) => o.userId), picksMade) };
 }
 
 async function eligibleEntry(tx: Tx, raceId: string, driverId: string) {
@@ -72,7 +67,6 @@ export async function getDraftState(raceId: string, db: Db = prisma): Promise<Dr
   const race = await db.race.findUnique({
     where: { id: raceId },
     include: {
-      _count: { select: { entries: true } },
       entries: { include: { driver: true } },
       draftOrders: { orderBy: { pickPosition: "asc" }, include: { user: true } },
       picks: { orderBy: { overallPickNumber: "asc" }, include: { driver: true, user: true, creator: true } },
@@ -81,8 +75,7 @@ export async function getDraftState(raceId: string, db: Db = prisma): Promise<Dr
   });
   if (!race) throw notFound("Race");
 
-  const snake = snakeOrder(race.draftOrders.map((o) => o.userId), ROUNDS);
-  const onTheClock = whoseTurn(snake, race.picks.length);
+  const { snake, onTheClock } = draftTurn(race.draftOrders.map((o) => o.userId), race.picks.length);
   const entryByDriver = new Map(race.entries.map((e) => [e.driverId, e]));
   const drafted = new Set(race.picks.map((p) => p.driverId));
   const startByDriver = new Map(race.qualifying.map((q) => [q.driverId, q.startPosition]));
@@ -98,16 +91,12 @@ export async function getDraftState(raceId: string, db: Db = prisma): Promise<Dr
 
   return {
     race: toRaceSummary(race),
-    order: race.draftOrders.map((o) => ({ userId: o.userId, displayName: o.user.displayName, pickPosition: o.pickPosition })),
+    order: race.draftOrders.map(toOrderView),
     snake,
     picks: race.picks.map((p) => {
       const entry = entryByDriver.get(p.driverId);
       return {
-        overallPickNumber: p.overallPickNumber,
-        roundNumber: p.roundNumber,
-        userId: p.userId,
-        driverId: p.driverId,
-        createdByUserId: p.createdByUserId,
+        ...toPickView(p),
         displayName: p.user.displayName,
         driverName: p.driver.driverName,
         carNumber: entry?.carNumber ?? p.driver.carNumber,
@@ -165,9 +154,7 @@ export async function spinWheel(raceId: string, actor: User, userIds?: string[],
 
     const order = shuffle(participants).map((u, i) => ({ userId: u.id, displayName: u.displayName, pickPosition: i + 1 }));
     await tx.draftOrder.createMany({ data: order.map(({ userId, pickPosition }) => ({ raceId, userId, pickPosition })) });
-    await tx.draftEvent.create({
-      data: { raceId, actorUserId: actor.id, type: "ORDER_GENERATED", payload: { order } },
-    });
+    await logDraftEvent(tx, raceId, actor.id, "ORDER_GENERATED", { order });
     await applyTransition(tx, race, "order_generated", { actorUserId: actor.id, now });
     notices.push(
       { raceId, kind: "draft_open", overallPickNumber: 0, to: "league" },
@@ -227,21 +214,14 @@ export async function makePick(
       await tx.pick.create({
         data: { raceId, userId: onTheClock, driverId: input.driverId, createdByUserId: actor.id, overallPickNumber, roundNumber },
       });
-      await tx.draftEvent.create({
-        data: {
-          raceId,
-          actorUserId: actor.id,
-          type: onBehalf ? "PICK_MADE_ON_BEHALF" : "PICK_MADE",
-          payload: {
-            overallPickNumber,
-            roundNumber,
-            userId: owner.id,
-            displayName: owner.displayName,
-            driverId: input.driverId,
-            driverName: entry.driver.driverName,
-            carNumber: entry.carNumber,
-          },
-        },
+      await logDraftEvent(tx, raceId, actor.id, onBehalf ? "PICK_MADE_ON_BEHALF" : "PICK_MADE", {
+        overallPickNumber,
+        roundNumber,
+        userId: owner.id,
+        displayName: owner.displayName,
+        driverId: input.driverId,
+        driverName: entry.driver.driverName,
+        carNumber: entry.carNumber,
       });
       created = true;
 
@@ -284,19 +264,12 @@ export async function revertLastPick(raceId: string, actor: User, now = new Date
     if (!last) throw conflict("NO_PICKS", "There are no picks to revert.");
 
     await tx.pick.delete({ where: { id: last.id } });
-    await tx.draftEvent.create({
-      data: {
-        raceId,
-        actorUserId: actor.id,
-        type: "PICK_REVERTED",
-        payload: {
-          overallPickNumber: last.overallPickNumber,
-          userId: last.userId,
-          displayName: last.user.displayName,
-          driverId: last.driverId,
-          driverName: last.driver.driverName,
-        },
-      },
+    await logDraftEvent(tx, raceId, actor.id, "PICK_REVERTED", {
+      overallPickNumber: last.overallPickNumber,
+      userId: last.userId,
+      displayName: last.user.displayName,
+      driverId: last.driverId,
+      driverName: last.driver.driverName,
     });
     await clearAfterRevert(tx, raceId, last.overallPickNumber);
 
@@ -328,19 +301,12 @@ export async function swapPick(raceId: string, actor: User, overallPickNumber: n
     await assertUndrafted(tx, raceId, driverId, entry.driver.driverName);
 
     await tx.pick.update({ where: { id: pick.id }, data: { driverId } });
-    await tx.draftEvent.create({
-      data: {
-        raceId,
-        actorUserId: actor.id,
-        type: "PICK_SWAPPED",
-        payload: {
-          overallPickNumber,
-          userId: pick.userId,
-          displayName: pick.user.displayName,
-          from: { driverId: pick.driverId, driverName: pick.driver.driverName },
-          to: { driverId, driverName: entry.driver.driverName },
-        },
-      },
+    await logDraftEvent(tx, raceId, actor.id, "PICK_SWAPPED", {
+      overallPickNumber,
+      userId: pick.userId,
+      displayName: pick.user.displayName,
+      from: { driverId: pick.driverId, driverName: pick.driver.driverName },
+      to: { driverId, driverName: entry.driver.driverName },
     });
   });
   return getDraftState(raceId);
@@ -354,7 +320,7 @@ export async function resetDraft(raceId: string, actor: User, now = new Date()):
     if (now >= race.raceDate) throw picksClosed();
 
     const { count } = await tx.pick.deleteMany({ where: { raceId } });
-    await tx.draftEvent.create({ data: { raceId, actorUserId: actor.id, type: "DRAFT_RESET", payload: { picksDeleted: count } } });
+    await logDraftEvent(tx, raceId, actor.id, "DRAFT_RESET", { picksDeleted: count });
     await clearAfterReset(tx, raceId);
     if (race.status === "LOCKED") await applyTransition(tx, race, "draft_reopened", { actorUserId: actor.id, now });
 
@@ -374,13 +340,9 @@ export async function regenerateOrder(raceId: string, actor: User, now = new Dat
     const { order } = await draftContext(tx, raceId);
     const { count } = await tx.pick.deleteMany({ where: { raceId } });
     await tx.draftOrder.deleteMany({ where: { raceId } });
-    await tx.draftEvent.create({
-      data: {
-        raceId,
-        actorUserId: actor.id,
-        type: "ORDER_REGENERATED",
-        payload: { previousOrder: order.map((o) => o.user.displayName), picksDeleted: count },
-      },
+    await logDraftEvent(tx, raceId, actor.id, "ORDER_REGENERATED", {
+      previousOrder: order.map((o) => o.user.displayName),
+      picksDeleted: count,
     });
     await clearAfterRegenerate(tx, raceId);
     await applyTransition(tx, race, "order_regenerated", { actorUserId: actor.id, now });
@@ -390,18 +352,21 @@ export async function regenerateOrder(raceId: string, actor: User, now = new Dat
 
 /** GET /races/:id/events — the audit log, newest first. */
 export async function listEvents(raceId: string): Promise<DraftEventView[]> {
-  const race = await prisma.race.findUnique({ where: { id: raceId }, select: { id: true } });
-  if (!race) throw notFound("Race");
+  await findRace(raceId);
   const events = await prisma.draftEvent.findMany({
     where: { raceId },
     orderBy: { createdAt: "desc" },
     include: { actor: true },
   });
-  return events.map((e) => ({
-    id: e.id,
-    type: e.type,
-    actorName: e.actor?.displayName ?? null,
-    payload: (e.payload ?? {}) as Record<string, unknown>,
-    createdAt: e.createdAt.toISOString(),
-  }));
+  // Each payload was written by logDraftEvent, checked against its type.
+  return events.map(
+    (e) =>
+      ({
+        id: e.id,
+        type: e.type,
+        actorName: e.actor?.displayName ?? null,
+        payload: e.payload,
+        createdAt: e.createdAt.toISOString(),
+      }) as DraftEventView,
+  );
 }

@@ -11,6 +11,7 @@
  * the live feed, and which flag_state means checkered. No session has been captured yet — run the capture script
  * (npm run capture:feed -w server) during a race weekend and check these against what it saves.
  */
+import type { FeedSessionType, FlagLabel } from "@dnd/shared";
 import { env } from "../env";
 
 export interface NormalizedVehicle {
@@ -25,12 +26,10 @@ export interface NormalizedVehicle {
   bestLapSpeed: number | null; // mph
 }
 
-export type SessionType = "practice" | "qualifying" | "race" | "unknown";
-
 export interface NormalizedRaceFeed {
   nascarRaceId: number | null;
   seriesId: number | null;
-  sessionType: SessionType;
+  sessionType: FeedSessionType;
   currentLap: number | null;
   totalLaps: number | null;
   flagState: number | null;
@@ -48,15 +47,21 @@ export interface FeedEntry {
 export class FeedShapeError extends Error {}
 
 // run_type 3 = race is verified on the live feed; 1 and 2 match the cacher's weekend_runs and the race schedule.
-const SESSION_TYPES: Record<number, SessionType> = { 1: "practice", 2: "qualifying", 3: "race" };
+const SESSION_TYPES: Record<number, FeedSessionType> = { 1: "practice", 2: "qualifying", 3: "race" };
 
 // UNVERIFIED: 9 was observed the Friday after a finished race; 4 is the commonly documented value.
 const CHECKERED_FLAGS = new Set([4, 9]);
 // UNVERIFIED: 1 green, 2 yellow, 3 red, 4 checkered.
 const GREEN_OR_LATER_FLAGS = new Set([1, 2, 3, 4]);
 
+// UNVERIFIED, like the sets above. No white-flag code has been seen, so "white" is never reported yet.
+const FLAG_LABELS: Record<number, FlagLabel> = { 1: "green", 2: "caution", 3: "red" };
+
 export const isCheckered = (flag: number | null) => flag !== null && CHECKERED_FLAGS.has(flag);
 export const isGreenOrLater = (flag: number | null) => flag !== null && GREEN_OR_LATER_FLAGS.has(flag);
+/** The feed's flag_state for the client; null when unknown. */
+export const flagLabel = (flag: number | null): FlagLabel | null =>
+  flag === null ? null : isCheckered(flag) ? "checkered" : (FLAG_LABELS[flag] ?? null);
 
 type Raw = Record<string, unknown>;
 const isObject = (v: unknown): v is Raw => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -125,11 +130,17 @@ export function normalizeLiveFeed(raw: unknown, fetchedAt = new Date()): Normali
   };
 }
 
+/** This race's entry in the cacher weekend feed's weekend_race[]. */
+function weekendRace(raw: unknown, nascarRaceId: number): Raw | null {
+  if (!isObject(raw) || !Array.isArray(raw.weekend_race)) return null;
+  const race = raw.weekend_race.find((r) => isObject(r) && num(r.race_id) === nascarRaceId);
+  return isObject(race) ? race : null;
+}
+
 /** The entry list from the cacher weekend feed (verified; populated two days before the race). */
 export function normalizeEntryList(raw: unknown, nascarRaceId: number): FeedEntry[] {
-  if (!isObject(raw) || !Array.isArray(raw.weekend_race)) throw new FeedShapeError("Weekend feed has no weekend_race.");
-  const race = raw.weekend_race.find((r) => isObject(r) && num(r.race_id) === nascarRaceId);
-  if (!isObject(race) || !Array.isArray(race.results)) {
+  const race = weekendRace(raw, nascarRaceId);
+  if (!race || !Array.isArray(race.results)) {
     throw new FeedShapeError(`Weekend feed has no entry list for race ${nascarRaceId}.`);
   }
   return race.results.map((r, i) => {
@@ -142,6 +153,20 @@ export function normalizeEntryList(raw: unknown, nascarRaceId: number): FeedEntr
     }
     return { nascarDriverId, driverName, carNumber, teamName: str(row.team_name) };
   });
+}
+
+/**
+ * Scheduled qualifying start from the weekend feed's schedule[] (run_type 2; start_time_utc has no zone suffix).
+ * Null when absent: the race's top-level qualifying_date is a 1900-01-01 placeholder, so it isn't used.
+ */
+export function normalizeQualifyingStart(raw: unknown, nascarRaceId: number): Date | null {
+  const race = weekendRace(raw, nascarRaceId);
+  if (!race || !Array.isArray(race.schedule)) return null;
+  const event = race.schedule.find((e) => isObject(e) && num(e.run_type) === 2);
+  const time = isObject(event) ? str(event.start_time_utc) : null;
+  if (time === null) return null;
+  const date = new Date(/(Z|[+-]\d\d:?\d\d)$/i.test(time) ? time : `${time}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 // --- Fetching ---------------------------------------------------------------------------------
@@ -165,6 +190,8 @@ export const fetchRaw: FetchRaw = async (url) => {
 };
 
 export const liveFeedUrl = () => `${env.NASCAR_FEED_BASE_URL}/live/feeds/live-feed.json`;
+export const weekendFeedUrl = (year: number, seriesId: number, nascarRaceId: number) =>
+  `${env.NASCAR_FEED_BASE_URL}/cacher/${year}/${seriesId}/${nascarRaceId}/weekend-feed.json`;
 
 // Last good feed, kept in memory. Client requests never call NASCAR; they read this and the database.
 let cached: NormalizedRaceFeed | null = null;
@@ -214,7 +241,7 @@ export async function fetchEntryList(
   seriesId: number,
   nascarRaceId: number,
   fetcher: FetchRaw = fetchRaw,
-): Promise<FeedEntry[]> {
-  const raw = await fetcher(`${env.NASCAR_FEED_BASE_URL}/cacher/${year}/${seriesId}/${nascarRaceId}/weekend-feed.json`);
-  return normalizeEntryList(raw, nascarRaceId);
+): Promise<{ entries: FeedEntry[]; qualifyingAt: Date | null }> {
+  const raw = await fetcher(weekendFeedUrl(year, seriesId, nascarRaceId));
+  return { entries: normalizeEntryList(raw, nascarRaceId), qualifyingAt: normalizeQualifyingStart(raw, nascarRaceId) };
 }

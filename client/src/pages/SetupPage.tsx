@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { api } from "../api";
 import { useSetMe } from "../auth";
+import { ErrorText } from "../components/QueryState";
 
 /** Landing page for the commissioner's single-use setup / password-reset link. */
 export function SetupPage() {
@@ -76,7 +77,7 @@ export function SetupPage() {
         </div>
 
         {mismatch && <p className="text-sm text-red-400">Passwords don't match.</p>}
-        {savePassword.isError && <p className="text-sm text-red-400">{savePassword.error.message}</p>}
+        <ErrorText error={savePassword.error} />
 
         <button
           type="submit"

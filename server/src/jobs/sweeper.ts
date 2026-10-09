@@ -1,4 +1,4 @@
-import { ROUNDS, snakeOrder, whoseTurn } from "@dnd/shared";
+import { draftTurn } from "@dnd/shared";
 import { prisma } from "../db";
 import { env } from "../env";
 import { notify, retryRow } from "../notifications/notify";
@@ -37,8 +37,7 @@ export async function runSweeper(now = new Date()): Promise<void> {
   });
 
   for (const race of races) {
-    const snake = snakeOrder(race.draftOrders.map((o) => o.userId), ROUNDS);
-    const onTheClock = whoseTurn(snake, race._count.picks);
+    const { onTheClock } = draftTurn(race.draftOrders.map((o) => o.userId), race._count.picks);
     if (!onTheClock) continue;
     const slot = race._count.picks + 1;
 
@@ -75,4 +74,8 @@ export async function runSweeper(now = new Date()): Promise<void> {
     where: { succeeded: false, attempts: { lt: 5 }, kind: { in: [...BROADCAST_KINDS] } },
   });
   for (const row of failed) await retryRow(row, now);
+
+  // 7. Expired sessions and setup links.
+  await prisma.session.deleteMany({ where: { expiresAt: { lt: now } } });
+  await prisma.setupToken.deleteMany({ where: { expiresAt: { lt: now } } });
 }

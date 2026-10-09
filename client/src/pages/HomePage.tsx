@@ -1,18 +1,17 @@
 import { ROUNDS } from "@dnd/shared";
-import { useQuery } from "@tanstack/react-query";
 import { BellRing } from "lucide-react";
 import { Link } from "react-router";
-import { api } from "../api";
 import { useMe } from "../auth";
-import { StatusBadge } from "../components/StatusBadge";
-import { formatRaceDate } from "../dates";
+import { QueryState } from "../components/QueryState";
+import { RaceCard } from "../components/RaceCard";
+import { TurnBanner } from "../components/TurnBanner";
 import { isIos, isStandalone, pushConfigured, pushSupported } from "../pwa";
-import { TurnBanner, useDraft } from "./DraftPage";
+import { useCurrentRace, useDraft } from "../queries";
 
 /** Dashboard: current race, your roster, whose turn it is, deadline countdown (SPEC Section 11). Refreshes on focus. */
 export function HomePage() {
   const { data: me } = useMe();
-  const current = useQuery({ queryKey: ["race", "current"], queryFn: api.currentRace });
+  const current = useCurrentRace();
   const draft = useDraft(current.data?.id, me?.id, false);
   const state = draft.data;
   const mine = state?.picks.filter((p) => p.userId === me?.id) ?? [];
@@ -23,21 +22,9 @@ export function HomePage() {
       <h1 className="text-2xl font-bold">Hey, {me?.displayName}</h1>
       <NotificationNudge />
 
-      {current.isPending && <p className="text-slate-400">Loading…</p>}
-      {current.isError && <p className="text-red-400">{current.error.message}</p>}
+      <QueryState query={current} />
       {current.isSuccess && !current.data && <div className="card text-slate-300">No race on the schedule.</div>}
-
-      {current.data && (
-        <div className="card flex flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold">{current.data.raceName}</h2>
-            <StatusBadge status={current.data.status} raceDate={current.data.raceDate} />
-          </div>
-          <div className="text-sm text-slate-400">
-            {current.data.trackName} · {formatRaceDate(current.data.raceDate)}
-          </div>
-        </div>
-      )}
+      {current.data && <RaceCard race={current.data} />}
 
       {state && me && (
         <>

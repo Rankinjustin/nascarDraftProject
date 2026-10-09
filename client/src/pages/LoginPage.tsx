@@ -6,6 +6,7 @@ import { APP_NAME } from "../appName";
 import { useMe, useSetMe } from "../auth";
 import { PhoneInput } from "../components/PhoneInput";
 import { InstallSteps } from "../components/PushSetup";
+import { ErrorText } from "../components/QueryState";
 import { isIos, isStandalone } from "../pwa";
 
 export function LoginPage() {
@@ -35,7 +36,9 @@ export function LoginPage() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
-      <h1 className="mb-1 text-3xl font-bold">{APP_NAME}</h1>
+      <h1 className="mb-3">
+        <img src="/logo.svg" alt={APP_NAME} className="w-full" />
+      </h1>
       <p className="mb-8 text-slate-400">Weekly NASCAR fantasy for the league.</p>
 
       {isIos() && !isStandalone() && (
@@ -70,7 +73,7 @@ export function LoginPage() {
           />
         </div>
 
-        {login.isError && <p className="text-sm text-red-400">{login.error.message}</p>}
+        <ErrorText error={login.error} />
 
         <button type="submit" className="btn-primary" disabled={login.isPending || !phone || !password}>
           {login.isPending ? "Logging in…" : "Log in"}

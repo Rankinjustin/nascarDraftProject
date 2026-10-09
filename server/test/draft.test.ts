@@ -6,6 +6,7 @@ import { notify, setChannels, settleNotifications } from "../src/notifications/n
 import { env } from "../src/env";
 import {
   call,
+  enterDrivers,
   fakeChannel,
   hasTestDb,
   makeDrivers,
@@ -43,7 +44,7 @@ describe.skipIf(!hasTestDb)("draft (integration)", () => {
     const season = await makeSeason();
     const race = await makeRace(season.id, raceDate ? { raceDate } : {});
     const ds = await makeDrivers(drivers);
-    await prisma.raceEntry.createMany({ data: ds.map((d) => ({ raceId: race.id, driverId: d.id, carNumber: d.carNumber })) });
+    await enterDrivers(race.id, ds);
     return { commish, members, everyone, race, drivers: ds };
   }
   type Ctx = Awaited<ReturnType<typeof setup>>;

@@ -1,11 +1,8 @@
-import type { Prisma } from "@prisma/client";
-import { prisma } from "../db";
+import { prisma, type Db } from "../db";
 import { env } from "../env";
 import { hashToken, newToken } from "./tokens";
 
 const SETUP_TOKEN_DAYS = 7;
-
-type Db = Prisma.TransactionClient | typeof prisma;
 
 /** Issues a single-use setup/reset link. Any outstanding links for this user stop working. */
 export async function issueSetupLink(userId: string, db: Db = prisma): Promise<string> {

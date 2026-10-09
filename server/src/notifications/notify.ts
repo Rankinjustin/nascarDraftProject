@@ -1,4 +1,4 @@
-import { ROUNDS, snakeOrder, whoseTurn } from "@dnd/shared";
+import { draftTurn } from "@dnd/shared";
 import type { NotificationLog, Race, User } from "@prisma/client";
 import { prisma } from "../db";
 import { env } from "../env";
@@ -41,8 +41,7 @@ async function loadContext(raceId: string): Promise<RaceContext | null> {
   });
   if (!race) return null;
   const users = new Map((await prisma.user.findMany()).map((u) => [u.id, u]));
-  const snake = snakeOrder(race.draftOrders.map((o) => o.userId), ROUNDS);
-  const onTheClock = whoseTurn(snake, race._count.picks);
+  const { snake, onTheClock } = draftTurn(race.draftOrders.map((o) => o.userId), race._count.picks);
   const name = (id: string | null | undefined) => (id ? (users.get(id)?.displayName ?? null) : null);
   return {
     race,

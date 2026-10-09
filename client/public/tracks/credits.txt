@@ -1,0 +1,112 @@
+Race card pictures
+==================
+
+Track outlines (*.svg) are drawn from OpenStreetMap data, (c) OpenStreetMap contributors,
+available under the Open Database License: https://www.openstreetmap.org/copyright
+
+Photos (*.jpg) are from Wikimedia Commons, resized, used under the licenses below.
+
+daytona.jpg - Daytona International Speedway
+  ImperialAssassin, Public domain
+  https://commons.wikimedia.org/wiki/File:Daytona_International_Speedway_(air).jpeg
+
+atlanta.jpg - Atlanta Motor Speedway
+  Staff Sgt. Cory W. Bush, Public domain
+  https://commons.wikimedia.org/wiki/File:Thunderbirds_fly_over_Atlanta_Motor_Speedway_(7).jpg
+
+cota.jpg - Circuit of The Americas
+  Zach Catanzareti Photo, CC BY 2.0
+  https://commons.wikimedia.org/wiki/File:Circuit_of_the_americas_cota_(52781066233).jpg
+
+phoenix.jpg - Phoenix Raceway
+  Marine 69-71, CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:Avondale-Phoenix_International_Raceway.jpg
+
+lasvegas.jpg - Las Vegas Motor Speedway
+  Ken Lund from Reno, Nevada, USA, CC BY-SA 2.0
+  https://commons.wikimedia.org/wiki/File:Las_Vegas_Motor_Speedway,_Las_Vegas,_Nevada_(14017097567).jpg
+
+darlington.jpg - Darlington Raceway
+  en:User:Berniestew, Public domain
+  https://commons.wikimedia.org/wiki/File:DarlingtonRacewayDodgeCharger500.JPG
+
+martinsville.jpg - Martinsville Speedway
+  GalaxyTrooper, CC BY-SA 3.0
+  https://commons.wikimedia.org/wiki/File:Martinsville_Speedway,_September_2011_overview.JPG
+
+bristol.jpg - Bristol Motor Speedway
+  User:CDJudd76, CC BY-SA 3.0
+  https://commons.wikimedia.org/wiki/File:Bristol_Motor_Speedway.jpeg
+
+kansas.jpg - Kansas Speedway
+  Lectrician2, CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:Kansas_Speedway_Aerial.jpg
+
+talladega.jpg - Talladega Superspeedway
+  Broadbandito from Sammamish, USA, CC BY 2.0
+  https://commons.wikimedia.org/wiki/File:Talladega_Superspeedway_Frontstretch_Grandstands_(7160014786).jpg
+
+texas.jpg - Texas Motor Speedway
+  iPhone Photography, CC BY 3.0
+  https://commons.wikimedia.org/wiki/File:Texas_Motor_Speedway_Empty_at_Night_-_panoramio.jpg
+
+watkinsglen.jpg - Watkins Glen International
+  Cyberwolf, CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:2025_Watkins_glen_imsa_race_turn_1_gtd.jpg
+
+charlotte.jpg - Charlotte Motor Speedway
+  tequilamike, CC BY 2.0
+  https://commons.wikimedia.org/wiki/File:Charlotte_Motor_Speedway_banner.jpg
+
+nashville.jpg - Nashville Superspeedway
+  US Air Force, Public domain
+  https://commons.wikimedia.org/wiki/File:Nationwide_2008.jpg
+
+michigan.jpg - Michigan International Speedway
+  N8huckins, CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:Michigan_International_Speedway,_2014.JPG
+
+pocono.jpg - Pocono Raceway
+  ZappaOMati, CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:Pocono_Raceway_aerial_2018.jpg
+
+sonoma.jpg - Sonoma Raceway
+  Sarah Stierch, CC BY 4.0
+  https://commons.wikimedia.org/wiki/File:Sonoma_Raceway_-_August_2014_-_Sarah_Stierch.jpg
+
+chicagoland.jpg - Chicagoland Speedway
+  Adam Moss from East Amherst, New York, United States, CC BY-SA 2.0
+  https://commons.wikimedia.org/wiki/File:Chicagoland_Speedway_(29918430136).jpg
+
+northwilkesboro.jpg - North Wilkesboro Speedway
+  Mike Kalasnik from Charlotte, USA, CC BY-SA 2.0
+  https://commons.wikimedia.org/wiki/File:North_Wilkesboro_Speedway_2.jpg
+
+indianapolis.jpg - Indianapolis Motor Speedway
+  Michael Barera, CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:Indianapolis_Motor_Speedway_May_2026_8.jpg
+
+iowa.jpg - Iowa Speedway
+  Matt Owen, CC BY 2.0
+  https://commons.wikimedia.org/wiki/File:IowaSpeedwayJune2007.jpg
+
+richmond.jpg - Richmond Raceway
+  Kev, CC BY-SA 2.0
+  https://commons.wikimedia.org/wiki/File:Richmond_International_Raceway_from_stands.jpg
+
+newhampshire.jpg - New Hampshire Motor Speedway
+  Nick Ares from Auburn, CA, United States, CC BY-SA 2.0
+  https://commons.wikimedia.org/wiki/File:NHIS_Panorama_(812986610).jpg
+
+gateway.jpg - World Wide Technology Raceway
+  Stl66dmk, CC BY-SA 4.0
+  https://commons.wikimedia.org/wiki/File:DragTower_Gateway.jpg
+
+homestead.jpg - Homestead-Miami Speedway
+  Chris Green, Public domain
+  https://commons.wikimedia.org/wiki/File:Homestead-Miami_Stadium.JPG
+
+sandiego.jpg - San Diego Street Course
+  U.S. Navy, Public domain
+  https://commons.wikimedia.org/wiki/File:US_Navy_100506-N-8421M-124_The_aircraft_carriers_USS_Ronald_Reagan_(CVN_76),_USS_Nimitz_(CVN_68)_and_USS_Carl_Vinson_(CVN_70)_are_pierside_at_Naval_Air_Station_North_Island.jpg
+

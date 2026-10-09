@@ -1,10 +1,9 @@
 import { CalendarRange, Flag, History, House, ListOrdered, RefreshCw, Settings, Shield, type LucideIcon } from "lucide-react";
 import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router";
-import { api } from "../api";
 import { APP_NAME } from "../appName";
 import { useMe } from "../auth";
-import { applyUpdate, currentPushSubscription, useUpdateAvailable } from "../pwa";
+import { applyUpdate, syncPushSubscription, useUpdateAvailable } from "../pwa";
 
 interface Tab {
   to: string;
@@ -21,7 +20,7 @@ const TABS: Tab[] = [
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `flex min-h-11 items-center gap-3 rounded-lg px-3 ${
-    isActive ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"
+    isActive ? "bg-slate-800 text-slate-50" : "text-slate-400 hover:text-slate-50"
   }`;
 
 /** Bottom tab bar on mobile, sidebar from md: up (SPEC Section 11). */
@@ -31,16 +30,9 @@ export function Layout() {
 
   // A device subscribed under someone else's login moves to whoever is logged in now (upsert on endpoint).
   useEffect(() => {
-    if (!me) return;
-    void currentPushSubscription()
-      .then((sub) => {
-        const keys = sub?.toJSON().keys;
-        if (sub && keys?.p256dh && keys.auth) {
-          return api.subscribePush({ endpoint: sub.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } });
-        }
-      })
-      .catch(() => undefined);
+    if (me) void syncPushSubscription().catch(() => undefined);
   }, [me?.id]);
+
   const extra: Tab[] = [
     { to: "/history", label: "Past weeks", icon: History },
     { to: "/settings", label: "Settings", icon: Settings },
@@ -48,9 +40,10 @@ export function Layout() {
   ];
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen pt-[env(safe-area-inset-top)]">
       <aside className="hidden w-56 shrink-0 flex-col gap-1 border-r border-slate-800 p-4 md:flex">
-        <div className="mb-4 px-3 text-lg font-bold">{APP_NAME}</div>
+        <img src="/logo.svg" alt={APP_NAME} className="mb-2 w-full" />
+        <div className="racing-stripe mb-4 rounded-full" />
         {[...TABS, ...extra].map((t) => (
           <NavLink key={t.to} to={t.to} end={t.to === "/"} className={linkClass}>
             <t.icon size={20} />
@@ -60,8 +53,8 @@ export function Layout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3 md:hidden">
-          <span className="font-bold">{APP_NAME}</span>
+        <header className="flex items-center justify-between gap-3 px-4 py-2 md:hidden">
+          <img src="/logo.svg" alt={APP_NAME} className="h-8 min-w-0" />
           <div className="flex gap-1">
             {extra.map((t) => (
               <NavLink
@@ -69,7 +62,7 @@ export function Layout() {
                 to={t.to}
                 aria-label={t.label}
                 className={({ isActive }) =>
-                  `flex h-11 w-11 items-center justify-center rounded-lg ${isActive ? "text-white" : "text-slate-400"}`
+                  `flex h-11 w-11 items-center justify-center rounded-lg ${isActive ? "text-sky-400" : "text-slate-400"}`
                 }
               >
                 <t.icon size={20} />
@@ -77,6 +70,7 @@ export function Layout() {
             ))}
           </div>
         </header>
+        <div className="racing-stripe md:hidden" />
 
         {updateAvailable && (
           // Never reloads on its own: someone may be mid-pick.
@@ -102,7 +96,7 @@ export function Layout() {
               end={t.to === "/"}
               className={({ isActive }) =>
                 `flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs ${
-                  isActive ? "text-white" : "text-slate-500"
+                  isActive ? "text-sky-400" : "text-slate-500"
                 }`
               }
             >

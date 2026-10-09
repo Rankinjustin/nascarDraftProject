@@ -2,40 +2,29 @@ import type { HistoryWeek } from "@dnd/shared";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Trophy } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useParams } from "react-router";
 import { api } from "../api";
 import { useMe } from "../auth";
-import { formatRaceDate } from "../dates";
-import { ordinal } from "../format";
+import { QueryState } from "../components/QueryState";
+import { RaceCard } from "../components/RaceCard";
+import { SeasonSelect } from "../components/SeasonSelect";
+import { fixed, ordinal } from "../format";
+import { keys } from "../queries";
 
 /** Past weeks, newest first, from the frozen weekly results. Every rank-1 row is a winner, so ties show them all. */
 export function HistoryPage() {
   const { data: me } = useMe();
-  const seasons = useQuery({ queryKey: ["seasons"], queryFn: api.listSeasons });
-  const [seasonId, setSeasonId] = useState<string>("");
-  const chosen = seasonId || seasons.data?.find((s) => s.isCurrent)?.id || "";
-  const history = useQuery({
-    queryKey: ["history", chosen],
-    queryFn: () => api.history(chosen || undefined),
-    enabled: seasons.isSuccess,
-  });
+  // No season in the URL: the server answers with the current one.
+  const { seasonId } = useParams();
+  const history = useQuery({ queryKey: [...keys.history, seasonId ?? ""], queryFn: () => api.history(seasonId) });
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">Past weeks</h1>
-        {(seasons.data?.length ?? 0) > 1 && (
-          <select className="input w-auto" value={chosen} onChange={(e) => setSeasonId(e.target.value)}>
-            {seasons.data!.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <SeasonSelect basePath="/history" seasonId={seasonId} />
       </div>
-      {history.isPending && <p className="text-slate-400">Loading…</p>}
-      {history.isError && <p className="text-red-400">{history.error.message}</p>}
+      <QueryState query={history} />
       {history.data?.length === 0 && <p className="card text-slate-400">No completed weeks yet this season.</p>}
       {history.data?.map((week) => <WeekCard key={week.race.id} week={week} meId={me?.id} />)}
     </div>
@@ -48,21 +37,17 @@ function WeekCard({ week, meId }: { week: HistoryWeek; meId?: string }) {
   const mine = week.results.find((r) => r.userId === meId);
 
   return (
-    <section className="card flex flex-col gap-2">
-      <button type="button" className="flex min-h-11 items-start gap-3 text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+    <RaceCard race={week.race}>
+      <button type="button" className="mt-1 flex min-h-11 items-start gap-3 text-left" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <div className="min-w-0 flex-1">
-          <div className="truncate font-semibold">{week.race.raceName}</div>
-          <div className="text-sm text-slate-400">
-            {week.race.trackName} · {formatRaceDate(week.race.raceDate)}
-          </div>
-          <div className="mt-1 flex items-center gap-2 text-sm text-yellow-200">
+          <div className="flex items-center gap-2 text-sm text-yellow-200">
             <Trophy size={16} className="shrink-0 text-yellow-400" />
             {winners.length ? winners.map((w) => w.displayName).join(" & ") : "No drafters"}
-            {winners[0] && <span className="text-slate-400">· {winners[0].score.toFixed(2)}</span>}
+            {winners[0] && <span className="text-slate-400">· {fixed(winners[0].score, 2)}</span>}
           </div>
           {mine && (
             <div className="text-sm text-slate-400">
-              You: {ordinal(mine.rank)} · {mine.score.toFixed(2)}
+              You: {ordinal(mine.rank)} · {fixed(mine.score, 2)}
             </div>
           )}
         </div>
@@ -76,7 +61,7 @@ function WeekCard({ week, meId }: { week: HistoryWeek; meId?: string }) {
               <div className="flex items-center gap-2">
                 <span className="w-6 font-bold">{r.rank}</span>
                 <span className="flex-1 font-semibold">{r.displayName}</span>
-                <span className="tabular-nums">{r.score.toFixed(2)}</span>
+                <span className="tabular-nums">{fixed(r.score, 2)}</span>
               </div>
               <ul className="ml-8 text-sm text-slate-300">
                 {r.driverFinishes.map((d, i) => (
@@ -99,7 +84,7 @@ function WeekCard({ week, meId }: { week: HistoryWeek; meId?: string }) {
           </Link>
         </div>
       )}
-    </section>
+    </RaceCard>
   );
 }
 

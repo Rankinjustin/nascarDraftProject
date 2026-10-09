@@ -7,7 +7,7 @@ const CACHING = !VERSION.startsWith("__");
 const CACHE = `dnd-shell-${VERSION}`;
 
 self.addEventListener("install", (event) => {
-  if (CACHING) event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/", "/manifest.webmanifest"])));
+  if (CACHING) event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["/", "/manifest.webmanifest", "/logo.svg", "/fonts/RussoOne.ttf"])));
   // No skipWaiting here: the new worker waits until the user taps "New version available".
 });
 
@@ -45,8 +45,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Hashed assets and icons never change under the same name: cache first.
-  if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/icons/")) {
+  // Hashed assets, icons, the font, the logo, and track pictures don't change within a version: cache first. Track
+  // pictures are cached as they're viewed rather than up front, so installing doesn't download all of them.
+  const path = url.pathname;
+  if (["/assets/", "/icons/", "/fonts/", "/tracks/"].some((p) => path.startsWith(p)) || path === "/logo.svg") {
     event.respondWith(
       caches.match(request).then(
         (cached) =>

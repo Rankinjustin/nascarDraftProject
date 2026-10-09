@@ -1,10 +1,12 @@
-import type { DraftEventView } from "@dnd/shared";
+import type { DraftEventView, TransitionReason } from "@dnd/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api";
 import { formatRaceDate } from "../dates";
+import { keys } from "../queries";
+import { QueryState } from "./QueryState";
 
-const REASONS: Record<string, string> = {
+const REASONS: Record<TransitionReason, string> = {
   order_generated: "draft opened",
   order_regenerated: "order thrown out",
   draft_filled: "draft complete",
@@ -16,42 +18,43 @@ const REASONS: Record<string, string> = {
   reopened: "reopened for corrections",
 };
 
-type Payload = Record<string, any>;
-
 /** One line per event, e.g. "Commish picked #9 Chase Elliott for Kyle (pick 7)". */
-export function describeEvent(e: DraftEventView): string {
-  const p = e.payload as Payload;
+function describeEvent(e: DraftEventView): string {
   const who = e.actorName ?? "System";
   switch (e.type) {
     case "ORDER_GENERATED":
-      return `${who} spun the wheel: ${(p.order as Payload[]).map((o) => `${o.pickPosition}. ${o.displayName}`).join(", ")}`;
+      return `${who} spun the wheel: ${e.payload.order.map((o) => `${o.pickPosition}. ${o.displayName}`).join(", ")}`;
     case "ORDER_REGENERATED":
-      return `${who} threw out the draft order (${p.picksDeleted} picks deleted) for a new spin`;
+      return `${who} threw out the draft order (${e.payload.picksDeleted} picks deleted) for a new spin`;
     case "PICK_MADE":
-      return `${p.displayName} took #${p.carNumber} ${p.driverName} (pick ${p.overallPickNumber})`;
+      return `${e.payload.displayName} took #${e.payload.carNumber} ${e.payload.driverName} (pick ${e.payload.overallPickNumber})`;
     case "PICK_MADE_ON_BEHALF":
-      return `${who} picked #${p.carNumber} ${p.driverName} for ${p.displayName} (pick ${p.overallPickNumber})`;
+      return `${who} picked #${e.payload.carNumber} ${e.payload.driverName} for ${e.payload.displayName} (pick ${e.payload.overallPickNumber})`;
     case "PICK_REVERTED":
-      return `${who} reverted pick ${p.overallPickNumber} (${p.driverName} from ${p.displayName})`;
+      return `${who} reverted pick ${e.payload.overallPickNumber} (${e.payload.driverName} from ${e.payload.displayName})`;
     case "PICK_SWAPPED":
-      return `${who} swapped pick ${p.overallPickNumber} for ${p.displayName}: ${p.from?.driverName} → ${p.to?.driverName}`;
+      return `${who} swapped pick ${e.payload.overallPickNumber} for ${e.payload.displayName}: ${e.payload.from.driverName} → ${e.payload.to.driverName}`;
     case "DRAFT_RESET":
-      return `${who} reset the draft (${p.picksDeleted} picks deleted)`;
-    case "STATUS_CHANGED":
+      return `${who} reset the draft (${e.payload.picksDeleted} picks deleted)`;
+    case "STATUS_CHANGED": {
+      const p = e.payload;
       return `${who}: ${REASONS[p.reason] ?? p.reason} (${p.from} → ${p.to})${p.note ? ` — “${p.note}”` : ""}`;
+    }
     case "RESULTS_CORRECTED":
       return `${who} corrected results`;
+    default:
+      // An event type newer than this build: still say something readable.
+      return `${who}: ${String((e as { type: unknown }).type).toLowerCase().replace(/_/g, " ")}`;
   }
 }
 
 function EventList({ raceId }: { raceId: string }) {
   const events = useQuery({
-    queryKey: ["events", raceId],
+    queryKey: keys.events(raceId),
     queryFn: () => api.listEvents(raceId),
     refetchInterval: 10_000,
   });
-  if (events.isPending) return <p className="text-sm text-slate-400">Loading…</p>;
-  if (events.isError) return <p className="text-sm text-red-400">{events.error.message}</p>;
+  if (!events.data) return <QueryState query={events} />;
   if (events.data.length === 0) return <p className="text-sm text-slate-400">Nothing yet.</p>;
   return (
     <ol className="flex flex-col gap-2">

@@ -17,3 +17,10 @@ export async function withRaceLock<T>(raceId: string, fn: (tx: Tx, race: Race) =
     return fn(tx, race);
   });
 }
+
+/** Reads outside the lock: the race, or a 404. */
+export async function findRace(id: string): Promise<Race> {
+  const race = await prisma.race.findUnique({ where: { id } });
+  if (!race) throw notFound("Race");
+  return race;
+}

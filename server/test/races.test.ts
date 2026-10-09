@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   call,
+  draftRace,
   hasTestDb,
   makeDrivers,
   makeRace,
@@ -215,16 +216,7 @@ describe.skipIf(!hasTestDb)("races & entries (integration)", () => {
       const race = await makeRace(season.id, { status: "DRAFTING" });
       const [d1] = await makeDrivers(1);
       const entry = await prisma.raceEntry.create({ data: { raceId: race.id, driverId: d1!.id, carNumber: "1" } });
-      await prisma.pick.create({
-        data: {
-          raceId: race.id,
-          userId: member.user.id,
-          createdByUserId: member.user.id,
-          driverId: d1!.id,
-          overallPickNumber: 1,
-          roundNumber: 1,
-        },
-      });
+      await draftRace(race.id, [member.user.id], [[member.user.id, d1!.id]]);
 
       const del = await call(commish.cookie, "DELETE", `/races/${race.id}/entries/${entry.id}`);
       expect(del.status).toBe(409);

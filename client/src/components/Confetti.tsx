@@ -1,7 +1,6 @@
-import { motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
-const COLORS = ["#38bdf8", "#facc15", "#f472b6", "#4ade80", "#f97316", "#a78bfa", "#ffffff"];
+const COLORS = ["#fdd74e", "#ff3d43", "#d52d95", "#027dc6", "#ffffff"];
 const PIECES = 90;
 
 /** A one-shot burst over the whole screen; removes itself after a few seconds and never blocks taps. */
@@ -30,13 +29,20 @@ export function Confetti() {
   return (
     <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden" aria-hidden>
       {pieces.map((p) => (
-        <motion.span
+        <span
           key={p.id}
           className="absolute top-0 block rounded-sm"
-          style={{ left: `${p.left}%`, width: p.size, height: p.size * 0.6, backgroundColor: p.color }}
-          initial={{ y: -20, x: 0, rotate: 0, opacity: 1 }}
-          animate={{ y: "105vh", x: p.drift, rotate: p.rotate, opacity: [1, 1, 0.8] }}
-          transition={{ duration: p.duration, delay: p.delay, ease: "easeIn" }}
+          style={
+            {
+              left: `${p.left}%`,
+              width: p.size,
+              height: p.size * 0.6,
+              backgroundColor: p.color,
+              "--drift": `${p.drift}px`,
+              "--spin": `${p.rotate}deg`,
+              animation: `confetti-fall ${p.duration}s ease-in ${p.delay}s both`,
+            } as CSSProperties
+          }
         />
       ))}
     </div>

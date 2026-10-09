@@ -2,12 +2,14 @@
 # Draft & Draft on one small Debian server (Google Cloud e2-micro). See deploy/gcp/README.md.
 #
 #   sudo bash dnd.sh setup <domain> <email> <release.tar.gz>   one time: installs everything, then deploys
-#   sudo dnd deploy <release.tar.gz>                           ship a new build (keeps the database and keys)
+#   sudo dnd deploy <release.tar.gz> [--force]                 ship a new build (keeps the database and keys)
+#   sudo dnd rollback                                          back to the build before the last deploy (not the database)
+#   sudo dnd ci-setup                                          make the key GitHub uses to deploy on every push
 #   sudo dnd seed <users.json>                                 load the season, drivers, and league; prints setup links
 #   sudo dnd logs                                              follow the app's log
 #   sudo dnd status                                            is everything running?
 #   sudo dnd backup                                            take a database backup now
-set -euo pipefail
+set -Eeuo pipefail
 
 APP_DIR=/opt/draft-and-draft
 CONF_DIR=/etc/draft-and-draft
@@ -168,10 +170,36 @@ EOF
   echo "Setup complete. Next: upload your users.json and run   sudo dnd seed ~/users.json"
 }
 
+# Prints the race that makes now a bad time to restart, since a restart can miss the qualifying capture or live
+# results (SPEC Section 2): from an hour before qualifying (two days before the race when qualifying's time isn't
+# known) until the race leaves LIVE. A DRAFTING/LOCKED race stops counting a day after its start, so one that never
+# went live can't block deploys forever; likewise a LIVE race a day after its start (isStaleLive in
+# server/src/races/current.ts), so one nobody completed can't either. qualifyingAt is read through to_jsonb so this
+# works before its migration runs; once 20261007184318_race_qualifying_at is deployed, read r."qualifyingAt" directly.
+frozen_by() {
+  [[ -n $(sudo -u postgres psql -d $DB_NAME -tAc "SELECT to_regclass('public.\"Race\"')") ]] || return 0
+  sudo -u postgres psql -d $DB_NAME -tAc "
+    SELECT \"raceName\" FROM \"Race\" r
+    WHERE (status = 'LIVE' AND now() AT TIME ZONE 'UTC' < \"raceDate\" + interval '1 day')
+       OR (status IN ('DRAFTING', 'LOCKED')
+           AND now() AT TIME ZONE 'UTC' >= COALESCE((to_jsonb(r)->>'qualifyingAt')::timestamp, \"raceDate\" - interval '2 days') - interval '1 hour'
+           AND now() AT TIME ZONE 'UTC' < \"raceDate\" + interval '1 day')
+    LIMIT 1"
+}
+
 deploy() {
-  local tarball=${1:-}
-  [[ -f $tarball ]] || die "usage: sudo dnd deploy <release.tar.gz>"
+  local tarball=${1:-} force=${2:-}
+  [[ -f $tarball ]] || die "usage: sudo dnd deploy <release.tar.gz> [--force]"
   tarball=$(readlink -f "$tarball")
+
+  local race
+  race=$(frozen_by)
+  if [[ -n $race && $force != --force ]]; then
+    die "race weekend freeze: $race is in qualifying or running, and a restart can lose its grid or results. Deploy after it's completed, or add --force."
+  fi
+
+  step "Backing up the database first"
+  /etc/cron.daily/draft-and-draft-backup
 
   step "Unpacking $tarball"
   local next=$APP_DIR.next
@@ -184,13 +212,16 @@ deploy() {
   sudo -u "$APP_USER" -H bash -c "cd $next && npm ci --no-audit --no-fund"
 
   step "Building the app"
-  # Build-time client settings: the push public key (must match the server's) and the league's app name.
+  add_missing_settings
+  # Build-time client settings: the push public key (must match the server's) and the league's app name. The name is
+  # passed as an environment variable rather than written to the .env file, so a quote or # in it can't break the file.
   local pub name
   pub=$(grep '^VAPID_PUBLIC_KEY=' "$CONF_DIR/server.env" | cut -d= -f2- || true)
-  name=$(grep '^APP_NAME=' "$CONF_DIR/server.env" | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' || true)
-  printf 'VITE_VAPID_PUBLIC_KEY=%s\nVITE_APP_NAME="%s"\n' "$pub" "$name" >"$next/client/.env.production.local"
+  name=$(grep '^APP_NAME=' "$CONF_DIR/server.env" | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e 's/\\"/"/g' || true)
+  printf 'VITE_VAPID_PUBLIC_KEY=%s\n' "$pub" >"$next/client/.env.production.local"
   chown "$APP_USER:$APP_USER" "$next/client/.env.production.local"
-  sudo -u "$APP_USER" -H bash -c "cd $next && npm run build -w client"
+  # Only the Vite build: CI (or your PC) already ran the typecheck, and tsc is slow on 1 GB of RAM.
+  sudo -u "$APP_USER" -H env VITE_APP_NAME="$name" bash -c "cd $next && npm exec -w client -- vite build"
 
   step "Updating the database"
   as_app "cd $next/server && npx prisma migrate deploy"
@@ -202,16 +233,90 @@ deploy() {
   mv "$next" "$APP_DIR"
   systemctl start $SERVICE
 
+  came_up || die "the app didn't answer on its health check. The previous build is in $APP_DIR.previous (sudo dnd rollback)."
+  # Keep this command in step with the build it just shipped.
+  install -m 755 "$APP_DIR/deploy/gcp/dnd.sh" /usr/local/bin/dnd
+}
+
+came_up() {
   step "Checking it came up"
   for _ in $(seq 1 30); do
     if curl -fs http://localhost:3001/api/health >/dev/null; then
       echo "Running. $(grep '^FRONTEND_ORIGIN=' "$CONF_DIR/server.env" | cut -d= -f2-)"
-      return
+      return 0
     fi
     sleep 2
   done
   journalctl -u $SERVICE -n 40 --no-pager
-  die "the app didn't answer on its health check. The previous build is in $APP_DIR.previous."
+  return 1
+}
+
+# Swaps the current build with the previous one, so running it again undoes it. The database is left as it is.
+rollback() {
+  [[ -d $APP_DIR.previous ]] || die "there's no previous build in $APP_DIR.previous."
+  echo "Warning: database migrations from the newer build are NOT undone. If it changed the database, the older" >&2
+  echo "build may not work with it; restore a backup from $BACKUP_DIR (taken before every deploy) if so." >&2
+  systemctl stop $SERVICE || true
+  rm -rf "$APP_DIR.swap"
+  mv "$APP_DIR" "$APP_DIR.swap"
+  mv "$APP_DIR.previous" "$APP_DIR"
+  mv "$APP_DIR.swap" "$APP_DIR.previous"
+  systemctl start $SERVICE
+  came_up || die "the rolled-back build didn't answer on its health check either."
+}
+
+# Settings added after servers were first set up: appended with their defaults when server.env doesn't have them yet
+# (existing lines are never changed). A new setting goes here as well as in the server.env that setup writes.
+add_missing_settings() {
+  local line
+  # Blank APP_NAME = the client's built-in default name.
+  for line in 'APP_NAME='; do
+    grep -q "^${line%%=*}=" "$CONF_DIR/server.env" && continue
+    [[ -z $(tail -c1 "$CONF_DIR/server.env") ]] || echo >>"$CONF_DIR/server.env"
+    echo "$line" >>"$CONF_DIR/server.env"
+    echo "Added $line to $CONF_DIR/server.env"
+  done
+}
+
+# The GitHub deploy key is forced to run this and nothing else: the release arrives on stdin.
+receive() {
+  local tarball
+  tarball=$(mktemp --suffix=.tar.gz)
+  # shellcheck disable=SC2064 # expand now: tarball is local and gone by exit time
+  trap "rm -f '$tarball'" EXIT
+  cat >"$tarball"
+  deploy "$tarball"
+}
+
+ci_setup() {
+  local user=deploy home=/home/deploy domain
+  domain=$(grep '^FRONTEND_ORIGIN=' "$CONF_DIR/server.env" | cut -d= -f2- | sed 's#^https\?://##')
+  id $user >/dev/null 2>&1 || useradd --create-home --shell /bin/bash $user
+  echo "$user ALL=(root) NOPASSWD: /usr/local/bin/dnd receive" >/etc/sudoers.d/dnd-deploy
+  chmod 440 /etc/sudoers.d/dnd-deploy
+  visudo -cq -f /etc/sudoers.d/dnd-deploy
+
+  # A new key each run; the old one stops working.
+  local tmp
+  tmp=$(mktemp -d)
+  ssh-keygen -q -t ed25519 -N "" -C github-deploy -f "$tmp/key"
+  install -d -o $user -g $user -m 700 $home/.ssh
+  echo "restrict,command=\"sudo /usr/local/bin/dnd receive\" $(cat "$tmp/key.pub")" >$home/.ssh/authorized_keys
+  chown $user:$user $home/.ssh/authorized_keys
+  chmod 600 $home/.ssh/authorized_keys
+
+  echo
+  echo "Add these in GitHub: your repo -> Settings -> Secrets and variables -> Actions -> New repository secret."
+  echo
+  echo "DEPLOY_HOST:"
+  echo "$domain"
+  echo
+  echo "DEPLOY_KNOWN_HOSTS:"
+  echo "$domain $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)"
+  echo
+  echo "DEPLOY_SSH_KEY (all of it, including the BEGIN and END lines):"
+  cat "$tmp/key"
+  rm -rf "$tmp"
 }
 
 seed() {
@@ -224,6 +329,9 @@ seed() {
 case ${1:-} in
   setup) shift; setup "$@" ;;
   deploy) shift; deploy "$@" ;;
+  rollback) rollback ;;
+  receive) receive ;;
+  ci-setup) ci_setup ;;
   seed) shift; seed "$@" ;;
   logs) journalctl -u $SERVICE -f ;;
   status)
@@ -231,5 +339,5 @@ case ${1:-} in
     curl -s http://localhost:3001/api/health && echo
     ;;
   backup) /etc/cron.daily/draft-and-draft-backup && ls -lh "$BACKUP_DIR" ;;
-  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) sed -n '/^set /q; 2,$p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

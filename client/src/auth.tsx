@@ -3,13 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 import { api, ApiError } from "./api";
-
-export const meKey = ["me"] as const;
+import { keys } from "./queries";
 
 /** The logged-in user, or null when logged out. */
 export function useMe() {
   return useQuery<PublicUser | null>({
-    queryKey: meKey,
+    queryKey: keys.me,
     queryFn: async () => {
       try {
         return await api.me();
@@ -25,8 +24,8 @@ export function useMe() {
 export function useSetMe() {
   const queryClient = useQueryClient();
   return (user: PublicUser | null) => {
-    queryClient.setQueryData(meKey, user);
-    if (!user) queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== meKey[0] });
+    queryClient.setQueryData(keys.me, user);
+    if (!user) queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== keys.me[0] });
   };
 }
 

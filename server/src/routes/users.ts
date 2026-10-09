@@ -1,12 +1,9 @@
-
 import { normalizePhone } from "@dnd/shared";
 import { Router } from "express";
 import { z } from "zod";
-import { toPublicUser } from "../auth/publicUser";
 import { currentUser, requireAuth, requireCommissioner } from "../auth/sessions";
-import { issueSetupLink } from "../auth/setupTokens";
-import { prisma } from "../db";
-import { HttpError, isUniqueViolation, notFound } from "../errors";
+import { createUser, issueUserSetupLink, listUsers, setNotificationsEnabled, updateUser } from "../services/users";
+import { idParams } from "./params";
 
 export const usersRouter = Router();
 
@@ -25,35 +22,18 @@ const phoneField = z
 const displayName = z.string().trim().min(1).max(40);
 const role = z.enum(["MEMBER", "COMMISSIONER"]);
 
-const phoneTakenError = () => new HttpError(409, "PHONE_TAKEN", "Someone already has that phone number.");
-
-
 usersRouter.patch("/me/notifications", requireAuth, async (req, res) => {
   const { notificationsEnabled } = z.object({ notificationsEnabled: z.boolean() }).parse(req.body);
-  const user = await prisma.user.update({
-    where: { id: currentUser(req).id },
-    data: { notificationsEnabled },
-  });
-  res.json(toPublicUser(user));
+  res.json(await setNotificationsEnabled(currentUser(req).id, notificationsEnabled));
 });
 
 usersRouter.get("/", requireCommissioner, async (_req, res) => {
-  const users = await prisma.user.findMany({ orderBy: [{ isActive: "desc" }, { displayName: "asc" }] });
-  res.json(users.map(toPublicUser));
+  res.json(await listUsers());
 });
 
 usersRouter.post("/", requireCommissioner, async (req, res) => {
   const body = z.object({ phoneNumber: phoneField, displayName, role: role.optional() }).parse(req.body);
-  try {
-    const result = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({ data: body });
-      return { user: toPublicUser(user), setupLink: await issueSetupLink(user.id, tx) };
-    });
-    res.status(201).json(result);
-  } catch (err) {
-    if (isUniqueViolation(err)) throw phoneTakenError();
-    throw err;
-  }
+  res.status(201).json(await createUser(body));
 });
 
 const patchBody = z.object({
@@ -70,38 +50,11 @@ const patchBody = z.object({
 });
 
 usersRouter.patch("/:id", requireCommissioner, async (req, res) => {
-  const body = patchBody.parse(req.body);
-  const id = req.params.id as string;
-
-  try {
-    const user = await prisma.$transaction(async (tx) => {
-      const existing = await tx.user.findUnique({ where: { id } });
-      if (!existing) throw notFound("User");
-
-      const updated = await tx.user.update({ where: { id }, data: body });
-
-      // Someone has to be able to run the league.
-      const activeCommissioners = await tx.user.count({ where: { role: "COMMISSIONER", isActive: true } });
-      if (activeCommissioners === 0) {
-        throw new HttpError(409, "LAST_COMMISSIONER", "The league needs at least one active commissioner.");
-      }
-      // Deactivation takes effect immediately; loadSession also rejects inactive users.
-      if (body.isActive === false) await tx.session.deleteMany({ where: { userId: id } });
-      return updated;
-    });
-    res.json(toPublicUser(user));
-  } catch (err) {
-    if (isUniqueViolation(err)) throw phoneTakenError();
-    throw err;
-  }
+  const { id } = idParams.parse(req.params);
+  res.json(await updateUser(id, patchBody.parse(req.body)));
 });
 
 usersRouter.post("/:id/setup-link", requireCommissioner, async (req, res) => {
-  const id = req.params.id as string;
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) throw notFound("User");
-  if (!user.isActive) {
-    throw new HttpError(409, "USER_INACTIVE", "Reactivate this user before sending a setup link.");
-  }
-  res.json({ setupLink: await issueSetupLink(user.id) });
+  const { id } = idParams.parse(req.params);
+  res.json({ setupLink: await issueUserSetupLink(id) });
 });

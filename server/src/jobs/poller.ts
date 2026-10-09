@@ -1,13 +1,7 @@
-import type { RaceStatus } from "@dnd/shared";
+import type { FeedSessionType } from "@dnd/shared";
 import { prisma } from "../db";
-import {
-  isCheckered,
-  isGreenOrLater,
-  refreshLiveFeed,
-  type FeedSnapshot,
-  type NormalizedRaceFeed,
-  type SessionType,
-} from "../integrations/nascarFeed";
+import { isCheckered, isGreenOrLater, refreshLiveFeed, type FeedSnapshot, type NormalizedRaceFeed } from "../integrations/nascarFeed";
+import { ACTIVE_STATUSES } from "../races/current";
 import { withRaceLock } from "../races/lock";
 import { applyTransition } from "../races/transition";
 import { resolveDrivers } from "../services/feedDrivers";
@@ -15,10 +9,9 @@ import { captureFeedQualifying } from "../services/qualifying";
 
 const DAY = 24 * 60 * 60 * 1000;
 const SLOW_INTERVAL = 2 * 60 * 1000;
-const ACTIVE: RaceStatus[] = ["DRAFTING", "LOCKED", "LIVE"];
 
 let lastFetchAt = 0;
-let lastSession: SessionType | null = null;
+let lastSession: FeedSessionType | null = null;
 
 /** Tests only. */
 export function resetPollerState(): void {
@@ -34,7 +27,7 @@ export function resetPollerState(): void {
 export async function runPoller(now = new Date(), refresh: () => Promise<FeedSnapshot> = () => refreshLiveFeed()) {
   const races = await prisma.race.findMany({
     where: {
-      status: { in: ACTIVE },
+      status: { in: ACTIVE_STATUSES },
       nascarRaceId: { not: null },
       raceDate: { gte: new Date(now.getTime() - 4 * DAY), lte: new Date(now.getTime() + 3 * DAY) },
     },

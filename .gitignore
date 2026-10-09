@@ -5,6 +5,5 @@ dist/
 *.log
 coverage/
 server/prisma/seed-data/users.json
-.vercel/
 server/test/fixtures/capture/
 release.tar.gz

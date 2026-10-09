@@ -1,7 +1,25 @@
-import type { Race } from "@prisma/client";
-import { checkTransition, ROUNDS, transitionTarget, type TransitionReason } from "@dnd/shared";
-import { HttpError } from "../errors";
+import type { Prisma, Race } from "@prisma/client";
+import {
+  checkTransition,
+  ROUNDS,
+  transitionTarget,
+  type DraftEventPayloads,
+  type DraftEventType,
+  type TransitionReason,
+} from "@dnd/shared";
+import { conflict } from "../errors";
 import type { Tx } from "./lock";
+
+/** Appends to a race's audit log; the payload shape is checked against its type. */
+export async function logDraftEvent<T extends DraftEventType>(
+  tx: Tx,
+  raceId: string,
+  actorUserId: string | null,
+  type: T,
+  payload: DraftEventPayloads[T],
+): Promise<void> {
+  await tx.draftEvent.create({ data: { raceId, actorUserId, type, payload: payload as Prisma.InputJsonObject } });
+}
 
 /**
  * The only code that writes Race.status (SPEC Section 4). Call it inside withRaceLock.
@@ -25,7 +43,7 @@ export async function applyTransition(
     totalSlots,
     hasBeenLive: race.wentLiveAt !== null,
   });
-  if (refusal) throw new HttpError(409, "INVALID_TRANSITION", refusal);
+  if (refusal) throw conflict("INVALID_TRANSITION", refusal);
 
   const to = transitionTarget(reason);
   const updated = await tx.race.update({
@@ -41,13 +59,13 @@ export async function applyTransition(
     await tx.notificationLog.deleteMany({ where: { raceId: race.id, kind: "draft_closed" } });
   }
 
-  await tx.draftEvent.create({
-    data: {
-      raceId: race.id,
-      actorUserId: opts.actorUserId,
-      type: "STATUS_CHANGED",
-      payload: { from: race.status, to, reason, picksMade, totalSlots, ...(opts.note ? { note: opts.note } : {}) },
-    },
+  await logDraftEvent(tx, race.id, opts.actorUserId, "STATUS_CHANGED", {
+    from: race.status,
+    to,
+    reason,
+    picksMade,
+    totalSlots,
+    ...(opts.note ? { note: opts.note } : {}),
   });
   return updated;
 }

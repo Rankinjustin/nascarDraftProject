@@ -37,6 +37,10 @@ export interface RaceSummary {
   raceName: string;
   trackName: string;
   raceDate: string;
+  /** Scheduled qualifying start; null when unknown. */
+  qualifyingAt: string | null;
+  trackMapUrl: string | null;
+  imageUrl: string | null;
   status: RaceStatus;
   scoringRuleKey: string;
   totalLaps: number | null;
@@ -83,7 +87,6 @@ export interface DriverView {
   driverName: string;
   carNumber: string;
   teamName: string | null;
-  isActive: boolean;
 }
 
 /** Reasons the commissioner can apply through POST /races/:id/status (SPEC Section 9). */
@@ -134,25 +137,57 @@ export interface DraftState {
   availableDrivers: AvailableDriver[];
 }
 
-export type DraftEventType =
-  | "ORDER_GENERATED"
-  | "ORDER_REGENERATED"
-  | "PICK_MADE"
-  | "PICK_MADE_ON_BEHALF"
-  | "PICK_REVERTED"
-  | "PICK_SWAPPED"
-  | "DRAFT_RESET"
-  | "STATUS_CHANGED"
-  | "RESULTS_CORRECTED";
-
-export interface DraftEventView {
-  id: string;
-  type: DraftEventType;
-  /** null = the system (deadline job, poller). */
-  actorName: string | null;
-  payload: Record<string, unknown>;
-  createdAt: string;
+/** What each DraftEvent type records in its payload (written by the server, read by the audit log). */
+export interface DraftEventPayloads {
+  ORDER_GENERATED: { order: DraftOrderView[] };
+  ORDER_REGENERATED: { previousOrder: string[]; picksDeleted: number };
+  PICK_MADE: PickEventPayload;
+  PICK_MADE_ON_BEHALF: PickEventPayload;
+  PICK_REVERTED: { overallPickNumber: number; userId: string; displayName: string; driverId: string; driverName: string };
+  PICK_SWAPPED: {
+    overallPickNumber: number;
+    userId: string;
+    displayName: string;
+    from: { driverId: string; driverName: string };
+    to: { driverId: string; driverName: string };
+  };
+  DRAFT_RESET: { picksDeleted: number };
+  STATUS_CHANGED: {
+    from: RaceStatus;
+    to: RaceStatus;
+    reason: TransitionReason;
+    picksMade: number;
+    totalSlots: number;
+    note?: string;
+  };
+  RESULTS_CORRECTED: {
+    mode: "replace" | "patch";
+    changes: { driverId: string; driverName: string | null; before: number | null; after: number }[];
+  };
 }
+
+export interface PickEventPayload {
+  overallPickNumber: number;
+  roundNumber: number;
+  userId: string;
+  displayName: string;
+  driverId: string;
+  driverName: string;
+  carNumber: string;
+}
+
+export type DraftEventType = keyof DraftEventPayloads;
+
+export type DraftEventView = {
+  [T in DraftEventType]: {
+    id: string;
+    type: T;
+    /** null = the system (deadline job, poller). */
+    actorName: string | null;
+    payload: DraftEventPayloads[T];
+    createdAt: string;
+  };
+}[DraftEventType];
 
 export interface PushSubscriptionInput {
   endpoint: string;
@@ -197,6 +232,8 @@ export interface RosterSlot {
   carNumber: string | null;
   startPosition: number | null;
   position: number | null;
+  /** startPosition - position; null until both are known. */
+  change: number | null;
   isWithdrawn: boolean;
 }
 
@@ -212,19 +249,36 @@ export interface FantasyStanding {
   drivers: RosterSlot[];
 }
 
+/** The feed's flag_state, translated on the server (the numeric codes are unverified; see nascarFeed.ts). */
+export type FlagLabel = "green" | "caution" | "red" | "white" | "checkered";
+
+/** POST /races and PATCH /races/:id body. Dates are ISO instants. */
+export interface RaceInput {
+  seasonId?: string;
+  raceName: string;
+  trackName: string;
+  raceDate: string;
+  qualifyingAt?: string | null;
+  trackMapUrl?: string | null;
+  imageUrl?: string | null;
+  nascarRaceId?: number | null;
+  totalLaps?: number | null;
+  scoringRuleKey?: string;
+}
+
 /** GET /races/:id/live — both halves of the race page in one poll. */
 export interface LiveView {
   race: RaceSummary & {
     currentLap: number | null;
     totalLaps: number | null;
-    flagState: number | null;
+    flag: FlagLabel | null;
     feedUpdatedAt: string | null;
     checkeredSeenAt: string | null;
   };
   /** The poller's last feed, only when it's for this race. null after a restart or for another race. */
   feed: {
     sessionType: FeedSessionType;
-    flagState: number | null;
+    flag: FlagLabel | null;
     currentLap: number | null;
     totalLaps: number | null;
     fetchedAt: string;

@@ -1,10 +1,11 @@
 import type { RaceStatus } from "@dnd/shared";
 
-const ACTIVE: RaceStatus[] = ["DRAFTING", "LOCKED", "LIVE"];
+/** Races with a draft or a race in progress. */
+export const ACTIVE_STATUSES: RaceStatus[] = ["DRAFTING", "LOCKED", "LIVE"];
 const STALE_LIVE_MS = 24 * 60 * 60 * 1000;
 
 /** A LIVE race more than 24 hours past its start: the commissioner probably forgot to complete it. */
-export function isStaleLive(race: { status: RaceStatus; raceDate: Date }, now: Date): boolean {
+function isStaleLive(race: { status: RaceStatus; raceDate: Date }, now: Date): boolean {
   return race.status === "LIVE" && now.getTime() - race.raceDate.getTime() > STALE_LIVE_MS;
 }
 
@@ -17,7 +18,7 @@ export function isStaleLive(race: { status: RaceStatus; raceDate: Date }, now: D
 export function pickCurrentRace<R extends { status: RaceStatus; raceDate: Date }>(races: R[], now: Date): R | null {
   const byDate = [...races].sort((a, b) => a.raceDate.getTime() - b.raceDate.getTime());
 
-  const active = byDate.filter((r) => ACTIVE.includes(r.status));
+  const active = byDate.filter((r) => ACTIVE_STATUSES.includes(r.status));
   const fresh = active.find((r) => !isStaleLive(r, now));
   if (fresh) return fresh;
   if (active[0]) return active[0];

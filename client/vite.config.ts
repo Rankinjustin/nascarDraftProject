@@ -37,7 +37,7 @@ function stampBuild(version: string, appName: string): Plugin {
 
 export default defineConfig(({ mode }) => {
   // VITE_APP_NAME from client/.env or the environment (the GCP deploy passes it from APP_NAME in server.env).
-  const appName = loadEnv(mode, process.cwd(), "VITE_").VITE_APP_NAME?.trim() || "Draft & Draft";
+  const appName = loadEnv(mode, process.cwd(), "VITE_").VITE_APP_NAME?.trim() || "NASCAR DUDES";
   return {
     plugins: [react(), tailwindcss(), stampBuild(appVersion, appName)],
     define: {
@@ -46,7 +46,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
-      // Same-origin in dev too, matching the production proxy rewrite (SPEC Section 5).
+      // Same-origin in dev too, as in production where the server serves the app and the API (SPEC Section 5).
       proxy: { "/api": "http://localhost:3001" },
     },
   };

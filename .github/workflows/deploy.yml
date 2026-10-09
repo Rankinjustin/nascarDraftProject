@@ -1,0 +1,58 @@
+# Every push to master: typecheck and test, then ship to the server (deploy/gcp/README.md, "Automatic deploys").
+# The server refuses during a race weekend; re-run this from the Actions tab once the race is completed.
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: draft_and_draft_test
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # The server's tests point DATABASE_URL at this themselves (server/vitest.config.ts).
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/draft_and_draft_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # Installing and building on the 1 GB server takes several minutes.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm run release
+      - name: Ship to the server
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # The key can only run "dnd receive", which reads the release from stdin and deploys it.
+          ssh -i ~/.ssh/deploy_key -o ConnectTimeout=20 -o ServerAliveInterval=30 "deploy@$DEPLOY_HOST" < release.tar.gz

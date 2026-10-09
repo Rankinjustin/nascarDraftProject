@@ -1,11 +1,11 @@
 import type { QualifyingView } from "@dnd/shared";
 import type { NormalizedVehicle } from "../integrations/nascarFeed";
-import { prisma } from "../db";
+import { prisma, type Db } from "../db";
 import { HttpError, notFound } from "../errors";
-import { withRaceLock, type Tx } from "../races/lock";
+import { findRace, withRaceLock, type Tx } from "../races/lock";
 import { resolveDrivers } from "./feedDrivers";
 
-async function gridFor(db: Tx | typeof prisma, raceId: string): Promise<QualifyingView[]> {
+export async function gridFor(db: Db, raceId: string): Promise<QualifyingView[]> {
   const rows = await db.qualifyingResult.findMany({
     where: { raceId },
     include: { driver: true },
@@ -27,15 +27,17 @@ async function gridFor(db: Tx | typeof prisma, raceId: string): Promise<Qualifyi
 
 /** GET /races/:id/qualifying — empty until captured or entered. */
 export async function getQualifying(raceId: string): Promise<QualifyingView[]> {
-  if (!(await prisma.race.findUnique({ where: { id: raceId }, select: { id: true } }))) throw notFound("Race");
+  await findRace(raceId);
   return gridFor(prisma, raceId);
 }
 
 /**
  * Poller capture during a live qualifying session (SPEC Section 7, "Qualifying capture"). Call inside the race lock.
  * Replaces the whole feed grid every poll (positions reshuffle constantly), and never touches a manual grid.
+ * An empty session (cars not on track yet, or the feed already moved on) keeps the last grid.
  */
 export async function captureFeedQualifying(tx: Tx, raceId: string, vehicles: NormalizedVehicle[]): Promise<boolean> {
+  if (vehicles.length === 0) return false;
   if ((await tx.qualifyingResult.count({ where: { raceId, source: "manual" } })) > 0) return false;
   const drivers = await resolveDrivers(tx, raceId, vehicles);
   const seen = new Set<string>();

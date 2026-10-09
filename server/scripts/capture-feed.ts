@@ -8,8 +8,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { env } from "../src/env";
-import { fetchRaw, liveFeedUrl } from "../src/integrations/nascarFeed";
+import { fetchRaw, liveFeedUrl, weekendFeedUrl } from "../src/integrations/nascarFeed";
 
 const raceId = Number(process.argv[2]);
 const seriesId = Number(process.argv[3] ?? 1);
@@ -41,7 +40,7 @@ async function tick(what: string, url: string): Promise<void> {
 
 const live = () => tick("live-feed", liveFeedUrl());
 const weekend = () =>
-  raceId ? tick("weekend-feed", `${env.NASCAR_FEED_BASE_URL}/cacher/${new Date().getFullYear()}/${seriesId}/${raceId}/weekend-feed.json`) : Promise.resolve();
+  raceId ? tick("weekend-feed", weekendFeedUrl(new Date().getFullYear(), seriesId, raceId)) : Promise.resolve();
 
 console.log(`Capturing the live feed every 30s${raceId ? ` and race ${raceId}'s weekend feed every 10 min` : ""}. Ctrl+C to stop.`);
 await Promise.all([live(), weekend()]);

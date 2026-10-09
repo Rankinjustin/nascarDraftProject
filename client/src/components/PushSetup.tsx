@@ -3,8 +3,8 @@ import { Share, SquarePlus } from "lucide-react";
 import { api } from "../api";
 import { APP_NAME } from "../appName";
 import { currentPushSubscription, disablePush, enablePush, isIos, isStandalone, pushConfigured, pushSupported } from "../pwa";
-
-const subscriptionKey = ["push-subscription"] as const;
+import { keys } from "../queries";
+import { ErrorText } from "./QueryState";
 
 /** iPhones only get push from the installed Home Screen app, and it keeps its own login (SPEC Sections 5 and 14). */
 export function InstallSteps() {
@@ -41,8 +41,8 @@ export function InstallSteps() {
 /** Per-device push setup, test, and turn-off. The account-wide mute lives beside it on the Settings page. */
 export function PushSetup() {
   const queryClient = useQueryClient();
-  const subscription = useQuery({ queryKey: subscriptionKey, queryFn: currentPushSubscription });
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: subscriptionKey });
+  const subscription = useQuery({ queryKey: keys.pushSubscription, queryFn: currentPushSubscription });
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: keys.pushSubscription });
 
   const enable = useMutation({ mutationFn: enablePush, onSettled: refresh });
   const disable = useMutation({ mutationFn: disablePush, onSettled: refresh });
@@ -68,7 +68,6 @@ export function PushSetup() {
     );
   }
 
-  const error = enable.error ?? disable.error ?? test.error;
   return (
     <div className="flex flex-col gap-2">
       {subscription.data ? (
@@ -89,7 +88,7 @@ export function PushSetup() {
           {enable.isPending ? "Turning on…" : "Turn on notifications for this device"}
         </button>
       )}
-      {error && <p className="text-sm text-red-400">{error.message}</p>}
+      <ErrorText error={enable.error ?? disable.error ?? test.error} />
     </div>
   );
 }

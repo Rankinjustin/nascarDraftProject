@@ -1,29 +1,28 @@
-import type { FantasyStanding, LiveDriverRow, LiveView, QualifyingView } from "@dnd/shared";
-import { useQuery } from "@tanstack/react-query";
+import type { FantasyStanding, FlagLabel, LiveDriverRow, LiveView, QualifyingView } from "@dnd/shared";
 import { Link, useParams } from "react-router";
-import { api } from "../api";
 import { useMe } from "../auth";
 import { Trophy } from "lucide-react";
 import { Confetti, useWinnerConfetti } from "../components/Confetti";
 import { CurrentRaceRedirect } from "../components/CurrentRaceRedirect";
-import { StatusBadge } from "../components/StatusBadge";
-import { formatRaceDate, formatTime } from "../dates";
+import { QueryState } from "../components/QueryState";
+import { RaceCard } from "../components/RaceCard";
+import { formatTime } from "../dates";
+import { fixed } from "../format";
+import { useLive } from "../queries";
 
 export function LivePage() {
   const { raceId } = useParams();
   return raceId ? <LiveRace key={raceId} raceId={raceId} /> : <CurrentRaceRedirect basePath="/live" />;
 }
 
-// Provisional until a race day confirms the feed's flag values (see server/src/integrations/nascarFeed.ts).
-const FLAGS: Record<number, { label: string; className: string }> = {
-  1: { label: "Green", className: "bg-green-600 text-white" },
-  2: { label: "Caution", className: "bg-yellow-400 text-slate-950" },
-  3: { label: "Red flag", className: "bg-red-600 text-white" },
-  4: { label: "Checkered", className: "bg-white text-slate-950" },
-  9: { label: "Checkered", className: "bg-white text-slate-950" },
+// Only shades light mode leaves alone (index.css), so each flag reads the same in either theme.
+const FLAGS: Record<FlagLabel, { text: string; className: string }> = {
+  green: { text: "Green", className: "bg-green-600 text-white" },
+  caution: { text: "Caution", className: "bg-yellow-500 text-black" },
+  red: { text: "Red flag", className: "bg-red-600 text-white" },
+  white: { text: "White flag", className: "border border-slate-600 bg-white text-black" },
+  checkered: { text: "Checkered", className: "border border-slate-600 bg-black text-white" },
 };
-
-const fmt = (n: number | null, digits = 1) => (n === null ? "—" : n.toFixed(digits));
 
 /** Green +12 for positions gained, red −3 for positions lost (SPEC Section 11). */
 function Change({ value }: { value: number | null }) {
@@ -38,40 +37,35 @@ function Change({ value }: { value: number | null }) {
 
 function LiveRace({ raceId }: { raceId: string }) {
   const { data: me } = useMe();
-  const live = useQuery({
-    queryKey: ["live", raceId],
-    queryFn: () => api.getLive(raceId),
-    // 15s on race day; otherwise the page only changes when qualifying lands or picks are made.
-    refetchInterval: (query) => (query.state.data?.race.status === "LIVE" ? 15_000 : 60_000),
-  });
+  const live = useLive(raceId);
   const iWon =
     live.data?.race.status === "COMPLETED" && live.data.fantasyStandings.some((s) => s.rank === 1 && s.userId === me?.id);
   const confetti = useWinnerConfetti(raceId, Boolean(iWon));
 
-  if (live.isPending) return <p className="text-slate-400">Loading…</p>;
-  if (live.isError && !live.data) return <p className="text-red-400">{live.error.message}</p>;
-  const view = live.data!;
+  if (!live.data) return <QueryState query={live} />;
+  const view = live.data;
   const { race } = view;
   const raced = race.status === "LIVE" || race.status === "COMPLETED" || race.status === "CORRECTING";
   const hasGrid = view.qualifying.length > 0;
-  const flag = race.flagState !== null ? FLAGS[race.flagState] : undefined;
+  const flag = race.flag ? FLAGS[race.flag] : undefined;
   // "Winner" always means rank 1, so a tie celebrates every co-winner (SPEC Section 4).
   const winners = race.status === "COMPLETED" ? view.fantasyStandings.filter((s) => s.rank === 1) : [];
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4">
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-bold">{race.raceName}</h1>
-          <StatusBadge status={race.status} raceDate={race.raceDate} />
-          {raced && flag && <span className={`rounded px-2 py-0.5 text-xs font-bold ${flag.className}`}>{flag.label}</span>}
-        </div>
-        <div className="text-sm text-slate-400">
-          {race.trackName} · {formatRaceDate(race.raceDate)}
-          {raced && race.currentLap !== null && ` · Lap ${race.currentLap}${race.totalLaps ? ` of ${race.totalLaps}` : ""}`}
-        </div>
+      <RaceCard
+        race={race}
+        heading="h1"
+        badges={raced && flag && <span className={`rounded px-2 py-0.5 text-xs font-bold ${flag.className}`}>{flag.text}</span>}
+      >
+        {raced && race.currentLap !== null && (
+          <div className="text-sm text-slate-300">
+            Lap {race.currentLap}
+            {race.totalLaps ? ` of ${race.totalLaps}` : ""}
+          </div>
+        )}
         <StaleNote view={view} offline={live.isError} updatedAt={live.dataUpdatedAt} />
-      </div>
+      </RaceCard>
 
       {confetti && <Confetti />}
       {winners.length > 0 && (
@@ -81,7 +75,7 @@ function LiveRace({ raceId }: { raceId: string }) {
             <div className="text-lg font-bold">
               {winners.map((w) => w.displayName).join(" & ")} {winners.length > 1 ? "tied for the win" : "won the week"}
             </div>
-            <div className="text-sm opacity-80">Average finish {fmt(winners[0]!.score, 2)}</div>
+            <div className="text-sm opacity-80">Average finish {fixed(winners[0]!.score, 2)}</div>
           </div>
         </div>
       )}
@@ -171,13 +165,13 @@ function StandingCard({
           <div className="truncate font-semibold">{s.displayName}</div>
           <div className="text-xs text-slate-400">
             {raced
-              ? `Avg start ${fmt(s.avgStart)} → now ${fmt(s.avgCurrent)}`
+              ? `Avg start ${fixed(s.avgStart, 1)} → now ${fixed(s.avgCurrent, 1)}`
               : hasGrid
-                ? `Avg start ${fmt(s.avgStart)}`
+                ? `Avg start ${fixed(s.avgStart, 1)}`
                 : "Grid TBD"}
           </div>
         </div>
-        {raced && <span className="text-xl font-bold tabular-nums">{fmt(s.score, 2)}</span>}
+        {raced && <span className="text-xl font-bold tabular-nums">{fixed(s.score, 2)}</span>}
       </div>
       <ul className="mt-2 flex flex-col gap-1 text-sm">
         {s.drivers.map((d, i) => (
@@ -193,7 +187,7 @@ function StandingCard({
                 {raced && (
                   <span className="w-14 text-right">
                     <span className="font-semibold tabular-nums">{d.position ?? "—"}</span>{" "}
-                    <Change value={d.startPosition !== null && d.position !== null ? d.startPosition - d.position : null} />
+                    <Change value={d.change} />
                   </span>
                 )}
               </>
@@ -271,7 +265,7 @@ function StartingGrid({ grid, view, meId }: { grid: QualifyingView[]; view: Live
                   {q.driverName}
                   {q.isPole && <span className="ml-1 text-xs text-sky-300">pole</span>}
                 </span>
-                {q.qualifyingSpeed !== null && <span className="text-xs text-slate-500">{q.qualifyingSpeed.toFixed(3)} mph</span>}
+                {q.qualifyingSpeed !== null && <span className="text-xs text-slate-500">{fixed(q.qualifyingSpeed, 3)} mph</span>}
                 <span className="w-20 truncate text-right text-slate-300">{who?.displayName ?? ""}</span>
               </li>
             );

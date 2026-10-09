@@ -9,6 +9,8 @@ Weekly NASCAR fantasy for a private league. Spec: [`docs/SPEC.md`](docs/SPEC.md)
 | `client/` | React + Vite + Tailwind PWA                                            |
 | `server/` | Express + Prisma + Postgres API                                        |
 | `shared/` | Types and pure rule functions used by both (the only mandatory tests)  |
+| `deploy/` | The single-server Google Cloud deploy (`deploy/gcp/dnd.sh`)            |
+| `docs/`   | `SPEC.md`, the source of truth for how the app behaves                 |
 
 ## Local setup
 
@@ -34,6 +36,14 @@ Open a printed setup link, set a password, and you're in. `users.json` is gitign
 | `npm run typecheck` | TypeScript across all three packages     |
 | `npm run db:migrate`| Create/apply a migration after editing `schema.prisma` |
 | `npm run db:seed`   | Re-run the seed (safe to repeat)         |
+| `npm run capture:feed -w server -- <nascarRaceId>` | Save raw NASCAR feed responses under `server/test/fixtures/capture/` during a race weekend |
+| `npm run release`   | Package the last commit as `release.tar.gz` for a manual deploy |
+
+## Deploying
+
+One Google Cloud server runs everything (Postgres, the app, HTTPS); step by step in
+[`deploy/gcp/README.md`](deploy/gcp/README.md). Pushes to `master` deploy automatically once that's set up. The server
+runs the TypeScript directly through `tsx`, which is why it's a production dependency of `server/`.
 
 ## Seed data
 

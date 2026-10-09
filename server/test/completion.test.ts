@@ -5,6 +5,8 @@ import { applyFeed } from "../src/jobs/poller";
 import { setChannels, settleNotifications } from "../src/notifications/notify";
 import {
   call,
+  draftRace,
+  enterDrivers,
   fakeChannel,
   hasTestDb,
   makeDrivers,
@@ -56,30 +58,16 @@ describe.skipIf(!hasTestDb)("completion, corrections, history, and season stats 
     if (!existing.length) {
       for (const [i, d] of drivers.entries()) await prisma.driver.update({ where: { id: d.id }, data: { nascarDriverId: 9001 + i } });
     }
-    await prisma.raceEntry.createMany({ data: drivers.map((d) => ({ raceId: race.id, driverId: d.id, carNumber: d.carNumber })) });
-    await prisma.draftOrder.createMany({ data: players.map((p, i) => ({ raceId: race.id, userId: p.user.id, pickPosition: i + 1 })) });
-    let n = 0;
+    await enterDrivers(race.id, drivers);
+    // Round by round; a roster shorter than 3 just has nothing to pick in the later rounds.
+    const picks: [string, string][] = [];
     for (let round = 0; round < 3; round++) {
       for (const [i, p] of players.entries()) {
         const carNo = rosters[i]![round];
-        n += 1;
-        if (carNo === undefined) continue;
-        await prisma.pick.create({
-          data: {
-            raceId: race.id,
-            userId: p.user.id,
-            createdByUserId: p.user.id,
-            driverId: drivers[carNo - 1]!.id,
-            overallPickNumber: n,
-            roundNumber: round + 1,
-          },
-        });
+        if (carNo !== undefined) picks.push([p.user.id, drivers[carNo - 1]!.id]);
       }
     }
-    // Picks must stay contiguous; renumber in case a roster had gaps.
-    const picks = await prisma.pick.findMany({ where: { raceId: race.id }, orderBy: { overallPickNumber: "asc" } });
-    for (const [i, p] of picks.entries()) await prisma.pick.update({ where: { id: p.id }, data: { overallPickNumber: 100 + i } });
-    for (const [i, p] of picks.entries()) await prisma.pick.update({ where: { id: p.id }, data: { overallPickNumber: i + 1 } });
+    await draftRace(race.id, players.map((p) => p.user.id), picks);
     return { commish, players, season, race, drivers };
   }
   type Ctx = Awaited<ReturnType<typeof setup>>;
@@ -262,21 +250,15 @@ describe.skipIf(!hasTestDb)("completion, corrections, history, and season stats 
 
     const commish2 = await makeUser("COMMISSIONER", "Commish 2");
     const race2 = await makeRace(week1.season.id, { status: "LIVE", nascarRaceId: null, raceDate: new Date(Date.now() - 2 * HOUR) });
-    await prisma.raceEntry.createMany({ data: week1.drivers.map((d) => ({ raceId: race2.id, driverId: d.id, carNumber: d.carNumber })) });
+    await enterDrivers(race2.id, week1.drivers);
     const [a, b] = week1.players;
-    await prisma.draftOrder.createMany({
-      data: [
-        { raceId: race2.id, userId: a!.user.id, pickPosition: 1 },
-        { raceId: race2.id, userId: b!.user.id, pickPosition: 2 },
-      ],
-    });
     // Week 2: A drafts cars 1, 9, 10; B drafts car 2 only.
     const week2Picks: [string, number][] = [[a!.user.id, 1], [b!.user.id, 2], [a!.user.id, 9], [a!.user.id, 10]];
-    for (const [i, [userId, carNo]] of week2Picks.entries()) {
-      await prisma.pick.create({
-        data: { raceId: race2.id, userId, createdByUserId: userId, driverId: week1.drivers[carNo - 1]!.id, overallPickNumber: i + 1, roundNumber: 1 },
-      });
-    }
+    await draftRace(
+      race2.id,
+      [a!.user.id, b!.user.id],
+      week2Picks.map(([userId, carNo]) => [userId, week1.drivers[carNo - 1]!.id]),
+    );
     await prisma.raceResult.createMany({
       data: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((c) => ({ raceId: race2.id, driverId: week1.drivers[c - 1]!.id, runningPosition: c })),
     });

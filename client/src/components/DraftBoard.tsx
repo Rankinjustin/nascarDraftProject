@@ -1,13 +1,10 @@
 import { ROUNDS, type DraftState } from "@dnd/shared";
 
-/** The slot a user fills in a round: forward in odd rounds, reversed in even ones (snake). */
-function slotFor(round: number, seat: number, drafters: number): number {
-  return (round - 1) * drafters + (round % 2 === 1 ? seat + 1 : drafters - seat);
-}
-
 /** Rounds × users grid. Scrolls sideways on mobile with the round labels pinned (SPEC Section 11). */
 export function DraftBoard({ state, meId }: { state: DraftState; meId: string }) {
-  const drafters = state.order.length;
+  // Each user's slots in round order, from the server's snake (slot n is snake[n - 1]).
+  const slotsByUser = new Map<string, number[]>();
+  state.snake.forEach((userId, i) => slotsByUser.set(userId, [...(slotsByUser.get(userId) ?? []), i + 1]));
   const bySlot = new Map(state.picks.map((p) => [p.overallPickNumber, p]));
   const rounds = Array.from({ length: ROUNDS }, (_, i) => i + 1);
 
@@ -34,16 +31,16 @@ export function DraftBoard({ state, meId }: { state: DraftState; meId: string })
           {rounds.map((round) => (
             <tr key={round}>
               <th className="sticky left-0 z-10 border-t border-slate-800 bg-slate-900 px-2 text-xs text-slate-500">{round}</th>
-              {state.order.map((o, seat) => {
-                const slot = slotFor(round, seat, drafters);
-                const pick = bySlot.get(slot);
-                const onClock = slot === state.nextOverallPickNumber;
+              {state.order.map((o) => {
+                const slot = slotsByUser.get(o.userId)?.[round - 1];
+                const pick = slot === undefined ? undefined : bySlot.get(slot);
+                const onClock = slot !== undefined && slot === state.nextOverallPickNumber;
                 return (
                   <td
                     key={o.userId}
                     className={`h-14 border-l border-t border-slate-800 px-2 align-top ${onClock ? "bg-sky-950" : ""}`}
                   >
-                    <div className="text-[10px] text-slate-500">#{slot}</div>
+                    {slot !== undefined && <div className="text-[10px] text-slate-500">#{slot}</div>}
                     {pick ? (
                       <div className="leading-tight">
                         <span className="font-mono text-slate-400">#{pick.carNumber}</span> {pick.driverName}

@@ -1,11 +1,24 @@
-import type { LiveView, QualifyingView } from "@dnd/shared";
+import type { FeedSessionType, LiveView, QualifyingView } from "@dnd/shared";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { applyFeed, resetPollerState, runPoller } from "../src/jobs/poller";
-import { setLiveFeedCache, type NormalizedRaceFeed, type NormalizedVehicle, type SessionType } from "../src/integrations/nascarFeed";
+import { setLiveFeedCache, type NormalizedRaceFeed, type NormalizedVehicle } from "../src/integrations/nascarFeed";
 import { importEntries } from "../src/services/entries";
-import { call, hasTestDb, makeDrivers, makeRace, makeSeason, makeUser, prisma, resetDb, startServer, stopServer } from "./helpers";
+import {
+  call,
+  draftRace,
+  enterDrivers,
+  hasTestDb,
+  makeDrivers,
+  makeRace,
+  makeSeason,
+  makeUser,
+  prisma,
+  resetDb,
+  startServer,
+  stopServer,
+} from "./helpers";
 
 const MIN = 60_000;
 const NASCAR_RACE = 5630;
@@ -26,7 +39,7 @@ describe.skipIf(!hasTestDb)("live feed, qualifying, and the live page (integrati
     const race = await makeRace(season.id, { nascarRaceId: NASCAR_RACE, status: "LOCKED", raceDate: new Date(Date.now() + 10 * MIN), ...data });
     const drivers = await makeDrivers(6);
     for (const [i, d] of drivers.entries()) await prisma.driver.update({ where: { id: d.id }, data: { nascarDriverId: 9001 + i } });
-    await prisma.raceEntry.createMany({ data: drivers.map((d) => ({ raceId: race.id, driverId: d.id, carNumber: d.carNumber })) });
+    await enterDrivers(race.id, drivers);
     return { commish, season, race, drivers };
   }
 
@@ -43,7 +56,7 @@ describe.skipIf(!hasTestDb)("live feed, qualifying, and the live page (integrati
     ...extra,
   });
 
-  const feed = (sessionType: SessionType, vehicles: NormalizedVehicle[], extra: Partial<NormalizedRaceFeed> = {}): NormalizedRaceFeed => ({
+  const feed = (sessionType: FeedSessionType, vehicles: NormalizedVehicle[], extra: Partial<NormalizedRaceFeed> = {}): NormalizedRaceFeed => ({
     nascarRaceId: NASCAR_RACE,
     seriesId: 1,
     sessionType,
@@ -117,6 +130,13 @@ describe.skipIf(!hasTestDb)("live feed, qualifying, and the live page (integrati
     ]);
   });
 
+  it("a qualifying poll with no cars keeps the last grid", async () => {
+    const { race } = await setup({ status: "DRAFTING" });
+    await applyFeed(race.id, feed("qualifying", [car(1, 1), car(2, 2)]));
+    await applyFeed(race.id, feed("qualifying", []));
+    expect(await prisma.qualifyingResult.count({ where: { raceId: race.id } })).toBe(2);
+  });
+
   it("a qualifying poll when manual rows exist → no change", async () => {
     const { commish, race, drivers } = await setup({ status: "DRAFTING" });
     const res = await call<QualifyingView[]>(commish.cookie, "POST", `/races/${race.id}/qualifying`, {
@@ -161,19 +181,9 @@ describe.skipIf(!hasTestDb)("live feed, qualifying, and the live page (integrati
       const ctx = await setup({ status });
       const a = await makeUser("MEMBER", "Alice");
       const b = await makeUser("MEMBER", "Bob");
-      await prisma.draftOrder.createMany({
-        data: [
-          { raceId: ctx.race.id, userId: a.user.id, pickPosition: 1 },
-          { raceId: ctx.race.id, userId: b.user.id, pickPosition: 2 },
-        ],
-      });
       // Alice: drivers 1, 4, 5. Bob: drivers 2, 3 and an empty slot.
       const picks: [string, number][] = [[a.user.id, 0], [b.user.id, 1], [b.user.id, 2], [a.user.id, 3], [a.user.id, 4]];
-      for (const [i, [userId, d]] of picks.entries()) {
-        await prisma.pick.create({
-          data: { raceId: ctx.race.id, userId, createdByUserId: userId, driverId: ctx.drivers[d]!.id, overallPickNumber: i + 1, roundNumber: Math.ceil((i + 1) / 2) },
-        });
-      }
+      await draftRace(ctx.race.id, [a.user.id, b.user.id], picks.map(([userId, d]) => [userId, ctx.drivers[d]!.id]));
       return { ...ctx, a, b };
     }
 
@@ -206,6 +216,8 @@ describe.skipIf(!hasTestDb)("live feed, qualifying, and the live page (integrati
       // Alice: 6, 3, 4 → 4.33. Bob: 1, 2, empty (7) → 3.33.
       expect(res.body.fantasyStandings.map((s) => [s.displayName, s.rank])).toEqual([["Bob", 1], ["Alice", 2]]);
       expect(res.body.fantasyStandings[1]!.score).toBeCloseTo(13 / 3);
+      expect(res.body.fantasyStandings[1]!.drivers.map((d) => d.change)).toEqual([-5, 1, 1]);
+      expect(res.body.race.flag).toBe("green");
       const leader = res.body.runningOrder[0]!;
       expect(leader).toMatchObject({ carNumber: "2", position: 1, startPosition: 2, change: 1, ownerName: "Bob" });
       expect(res.body.runningOrder.find((r) => r.carNumber === "1")).toMatchObject({ startPosition: 1, change: -5 });
@@ -218,6 +230,8 @@ describe.skipIf(!hasTestDb)("live feed, qualifying, and the live page (integrati
     const first = await importEntries(race.id, async () => raw);
     expect(first.added).toBe(36);
     expect(first.entries).toHaveLength(42);
+    const saved = await prisma.race.findUniqueOrThrow({ where: { id: race.id } });
+    expect(saved.qualifyingAt?.toISOString()).toBe("2026-10-03T21:35:00.000Z");
     const second = await importEntries(race.id, async () => raw);
     expect(second.added).toBe(0);
   });

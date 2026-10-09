@@ -1,8 +1,7 @@
 import type { AvailableDriver } from "@dnd/shared";
-import { Search } from "lucide-react";
 import { useState } from "react";
 import { ordinal } from "../format";
-
+import { SearchInput } from "./SearchInput";
 
 /**
  * Single scrollable column with search (SPEC Section 11). The server sorts it: starting position once
@@ -34,15 +33,7 @@ export function DriverPicker({
         <h2 className="text-lg font-semibold">Available drivers</h2>
         <span className="text-sm text-slate-400">{drivers.length} left</span>
       </div>
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-        <input
-          className="input pl-10"
-          placeholder="Search name or car number"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
+      <SearchInput placeholder="Search name or car number" value={query} onChange={setQuery} />
 
       <ul className="flex flex-col divide-y divide-slate-800 rounded-xl border border-slate-800">
         {shown.map((d) => (

@@ -17,7 +17,9 @@
     "release": "git archive --format=tar.gz -o release.tar.gz HEAD"
   },
   "devDependencies": {
-    "concurrently": "^9.0.0"
+    "concurrently": "^9.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=22"
