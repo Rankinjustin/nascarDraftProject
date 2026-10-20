@@ -1,4 +1,4 @@
-import type { User } from "@prisma/client";
+import type { Race, User } from "@prisma/client";
 import {
   ROUNDS,
   draftTurn,
@@ -286,15 +286,52 @@ export async function revertLastPick(raceId: string, actor: User, now = new Date
   return getDraftState(raceId);
 }
 
-/** PUT /races/:id/picks/:overallPickNumber — how withdrawals are handled. The pick keeps its slot and owner. */
+/**
+ * A slot left empty when picks closed. Picks are contiguous, so only the next slot can be filled, and it
+ * goes to whoever the snake gives it to. While drafting, the commissioner picks on behalf instead.
+ */
+async function fillMissedSlot(tx: Tx, race: Race, actor: User, overallPickNumber: number, driverId: string) {
+  if (race.status !== "LOCKED" && race.status !== "LIVE" && race.status !== "CORRECTING") {
+    throw conflict("SLOT_NOT_FILLABLE", "An empty slot can be filled once picks have closed, or after reopening a completed race.");
+  }
+  const { order, snake, picksMade } = await draftContext(tx, race.id);
+  if (overallPickNumber !== picksMade + 1 || overallPickNumber > snake.length) {
+    throw new HttpError(400, "SLOT_NOT_NEXT", `Only the next empty slot (pick ${picksMade + 1}) can be filled.`);
+  }
+
+  const entry = await eligibleEntry(tx, race.id, driverId);
+  await assertUndrafted(tx, race.id, driverId, entry.driver.driverName);
+
+  const owner = order.find((o) => o.userId === snake[picksMade])!.user;
+  const roundNumber = roundForPick(overallPickNumber, order.length);
+  await tx.pick.create({
+    data: { raceId: race.id, userId: owner.id, driverId, createdByUserId: actor.id, overallPickNumber, roundNumber },
+  });
+  await logDraftEvent(tx, race.id, actor.id, "PICK_MADE_ON_BEHALF", {
+    overallPickNumber,
+    roundNumber,
+    userId: owner.id,
+    displayName: owner.displayName,
+    driverId,
+    driverName: entry.driver.driverName,
+    carNumber: entry.carNumber,
+  });
+}
+
+/**
+ * PUT /races/:id/picks/:overallPickNumber — how withdrawals are handled, and how a finished race's picks
+ * are corrected (reopen first). The pick keeps its slot and owner. On the next empty slot after the
+ * deadline, it fills the pick for whoever owned that slot instead.
+ */
 export async function swapPick(raceId: string, actor: User, overallPickNumber: number, driverId: string): Promise<DraftState> {
   await withRaceLock(raceId, async (tx, race) => {
-    assertEditable(race.status);
     const pick = await tx.pick.findUnique({
       where: { raceId_overallPickNumber: { raceId, overallPickNumber } },
       include: { driver: true, user: true },
     });
-    if (!pick) throw notFound("Pick");
+    if (!pick) return fillMissedSlot(tx, race, actor, overallPickNumber, driverId);
+    // A reopened race can have a pick corrected too; re-completing rescores it.
+    if (race.status !== "CORRECTING") assertEditable(race.status);
     if (pick.driverId === driverId) throw new HttpError(400, "SAME_DRIVER", "That pick already has this driver.");
 
     const entry = await eligibleEntry(tx, raceId, driverId);

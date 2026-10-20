@@ -27,16 +27,30 @@ export function CommishPanel({
   const editable = state.race.status === "DRAFTING" || state.race.status === "LOCKED";
   const beforeDeadline = Date.parse(state.deadline) > Date.now();
   const onClock = state.onTheClock;
+  // After picks close, onTheClock is the owner of the next empty slot.
+  const fillable = ["LOCKED", "LIVE", "CORRECTING"].includes(state.race.status);
 
   return (
     <details className="card border-amber-900">
       <summary className="min-h-11 cursor-pointer content-center font-semibold text-amber-200">Commish</summary>
       <div className="mt-3 flex flex-col gap-5">
-        {!editable && (
+        {!editable && state.race.status !== "CORRECTING" && (
           <p className="text-sm text-slate-400">
-            Draft controls work while the race is drafting or locked. Once it's live, rosters are final.
+            Draft controls work while the race is drafting or locked.
+            {state.race.status === "COMPLETED"
+              ? " To fix or fill a pick after the race, reopen it in race admin, change it here, then complete it again."
+              : " Once it's live, only a missed pick can be filled."}
           </p>
         )}
+
+        {state.race.status === "CORRECTING" && (
+          <>
+            <p className="text-sm text-amber-200">Reopened for corrections. Complete the race again to rescore.</p>
+            <SwapPick raceId={raceId} state={state} onState={onState} />
+          </>
+        )}
+
+        {fillable && onClock && <FillSlot raceId={raceId} state={state} owner={onClock} onState={onState} />}
 
         {state.race.status === "DRAFTING" && onClock && onClock.userId !== meId && (
           <div className="flex flex-col gap-2">
@@ -160,6 +174,55 @@ function SwapPick({ raceId, state, onState }: { raceId: string; state: DraftStat
         Swap
       </button>
       <ErrorText error={swap.error} />
+    </div>
+  );
+}
+
+function FillSlot({
+  raceId,
+  state,
+  owner,
+  onState,
+}: {
+  raceId: string;
+  state: DraftState;
+  owner: { displayName: string };
+  onState: (s: DraftState) => void;
+}) {
+  const [driverId, setDriverId] = useState("");
+  const slot = state.picks.length + 1;
+  const fill = useMutation({
+    mutationFn: () => api.swapPick(raceId, slot, driverId),
+    onSuccess: (s) => {
+      setDriverId("");
+      onState(s);
+    },
+  });
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="font-semibold">Fill a missed pick</h3>
+      <p className="text-sm text-slate-400">
+        Pick {slot} is empty. It goes to {owner.displayName} and is logged for the league.
+        {state.race.status === "LIVE" ? " Scores update when the race is completed." : ""}
+      </p>
+      <select className="input" value={driverId} onChange={(e) => setDriverId(e.target.value)}>
+        <option value="">Driver for {owner.displayName}…</option>
+        {state.availableDrivers.map((d) => (
+          <option key={d.driverId} value={d.driverId}>
+            #{d.carNumber} {d.driverName}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={!driverId || fill.isPending}
+        onClick={() => fill.mutate()}
+      >
+        Fill pick {slot}
+      </button>
+      <ErrorText error={fill.error} />
     </div>
   );
 }

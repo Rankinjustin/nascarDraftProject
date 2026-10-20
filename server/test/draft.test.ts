@@ -259,6 +259,42 @@ describe.skipIf(!hasTestDb)("draft (integration)", () => {
       expect(await prisma.draftEvent.count({ where: { type: "PICK_SWAPPED" } })).toBe(1);
     });
 
+    it("swap works on a reopened race but not a completed one", async () => {
+      const ctx = await setup({ players: 2, drivers: 8 });
+      await spin(ctx);
+      const state = await pickSlots(ctx, 6);
+      const replacement = state.availableDrivers[0]!.driverId;
+      const url = `/races/${ctx.race.id}/picks/2`;
+
+      await prisma.race.update({ where: { id: ctx.race.id }, data: { status: "COMPLETED" } });
+      expect((await call(ctx.commish.cookie, "PUT", url, { driverId: replacement })).status).toBe(409);
+
+      await prisma.race.update({ where: { id: ctx.race.id }, data: { status: "CORRECTING" } });
+      expect((await call(ctx.commish.cookie, "PUT", url, { driverId: replacement })).status).toBe(200);
+      const pick = await prisma.pick.findFirstOrThrow({ where: { raceId: ctx.race.id, overallPickNumber: 2 } });
+      expect(pick.driverId).toBe(replacement);
+    });
+
+    it("a slot missed at the deadline can be filled for its owner, next slot only", async () => {
+      const ctx = await setup({ players: 2, drivers: 8 });
+      await spin(ctx);
+      const state = await pickSlots(ctx, 5);
+      const owner = state.snake[5]!;
+      const [a, b] = state.availableDrivers.map((d) => d.driverId);
+      const fill = (n: number, driverId: string) =>
+        call<DraftState>(ctx.commish.cookie, "PUT", `/races/${ctx.race.id}/picks/${n}`, { driverId });
+
+      // Still drafting: that's pick-on-behalf's job.
+      expect((await fill(6, a!)).status).toBe(409);
+
+      await prisma.race.update({ where: { id: ctx.race.id }, data: { status: "LIVE" } });
+      expect((await fill(7, a!)).status).toBe(400);
+      const res = await fill(6, a!);
+      expect(res.status).toBe(200);
+      expect(res.body.picks[5]).toMatchObject({ overallPickNumber: 6, userId: owner, driverId: a });
+      expect((await fill(7, b!)).status).toBe(400);
+    });
+
     it("withdrawn drafted drivers are flagged on the board", async () => {
       const ctx = await setup();
       await spin(ctx);

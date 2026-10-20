@@ -485,6 +485,8 @@ If the poller never promoted the race (feed down, or no `nascarRaceId`), the com
 
 1. `POST /races/:id/reopen` (commissioner) — `COMPLETED → CORRECTING`, deletes the race's `WeeklyResult` rows, logs `STATUS_CHANGED`. The poller ignores `CORRECTING` races, so nothing changes underneath the commissioner.
 2. `PATCH /races/:id/results` (commissioner, `LIVE` or `CORRECTING` only) — sets `finishPosition` on individual drivers, creating the row if it doesn't exist; logs `RESULTS_CORRECTED` with before/after. For a full re-order, use `PUT /races/:id/results` (above).
+   To fix a member's driver, `PUT /races/:id/picks/:overallPickNumber` (swap) is also allowed while `CORRECTING`; the pick keeps its slot and owner and logs `PICK_SWAPPED`. Revert, reset, and regenerate stay `DRAFTING`/`LOCKED` only.
+   **Filling a missed slot:** the same `PUT` on a slot with no pick creates it, while `LOCKED`, `LIVE`, or `CORRECTING`. Only the next empty slot (`picksMade + 1`) can be filled, so picks stay contiguous; it goes to that slot's snake owner and logs `PICK_MADE_ON_BEHALF`. A `COMPLETED` race is reopened first. While `DRAFTING`, the commissioner uses pick-on-behalf instead.
 3. `POST /races/:id/complete` — re-completes. Because step 2 of completion only fills nulls, the patched values survive.
 
 `results_posted` is deduped, so re-completion doesn't re-notify the league. The commissioner can post a note in the group chat if a correction changed the winner.
@@ -553,7 +555,7 @@ POST   /races/:id/draft-order                [C]  → spin the wheel; optional {
 GET    /races/:id/draft                           → { order, snake, picks, onTheClock, nextOverallPickNumber, deadline, availableDrivers }
 POST   /races/:id/picks                           → { driverId, overallPickNumber, onBehalfOfUserId? }
 DELETE /races/:id/picks/last                 [C]  → revert
-PUT    /races/:id/picks/:overallPickNumber   [C]  → { driverId } swap the driver on that pick
+PUT    /races/:id/picks/:overallPickNumber   [C]  → { driverId } swap the driver on that pick, or fill the next missed slot (Section 8)
 POST   /races/:id/draft/reset                [C]
 POST   /races/:id/draft/regenerate           [C]
 GET    /races/:id/events                          → audit log
