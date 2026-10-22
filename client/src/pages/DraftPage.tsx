@@ -1,4 +1,4 @@
-import { roundForPick, type DraftState, type PublicUser } from "@dnd/shared";
+import { roundForPick, whoseTurn, type DraftState, type PublicUser } from "@dnd/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
@@ -15,7 +15,7 @@ import { SpinPanel } from "../components/SpinPanel";
 import { TurnBanner } from "../components/TurnBanner";
 import { WheelSpinner } from "../components/WheelSpinner";
 import { formatTime } from "../dates";
-import { keys, useDraft } from "../queries";
+import { keys, useDraft, useInvalidateRace } from "../queries";
 
 export function DraftPage() {
   const { raceId } = useParams();
@@ -45,7 +45,8 @@ function withOptimisticPick(state: DraftState, driverId: string, me: PublicUser)
   const driver = state.availableDrivers.find((d) => d.driverId === driverId);
   const slot = state.nextOverallPickNumber;
   if (!driver || !slot || !state.onTheClock) return state;
-  const nextUserId = state.snake[slot] ?? null;
+  // `slot` picks will have been made once this one lands.
+  const nextUserId = whoseTurn(state.snake, slot);
   const next = state.order.find((o) => o.userId === nextUserId);
   return {
     ...state,
@@ -78,7 +79,14 @@ function DraftRoom({ raceId }: { raceId: string }) {
   const [wheel, setWheel] = useState<"auto" | "show" | "hidden">("auto");
   const [notice, setNotice] = useState<string | null>(null);
 
+  const invalidateRace = useInvalidateRace(raceId);
+  // Local only: the optimistic pick and its rollback.
   const setState = (state: DraftState) => queryClient.setQueryData(keys.draft(raceId), state);
+  // A write's response. The draft is fresh, and every other view of the race (live page, audit log, race card) isn't.
+  const applyResult = (state: DraftState) => {
+    setState(state);
+    invalidateRace();
+  };
   const state = draft.data;
 
   // Picking on behalf only ever means "for whoever is on the clock now"; drop it when the turn moves on.
@@ -102,7 +110,7 @@ function DraftRoom({ raceId }: { raceId: string }) {
       void queryClient.invalidateQueries({ queryKey: keys.draft(raceId) });
     },
     onSuccess: (next) => {
-      setState(next);
+      applyResult(next);
       setOnBehalf(false);
     },
   });
@@ -153,7 +161,7 @@ function DraftRoom({ raceId }: { raceId: string }) {
 
           {state.race.status === "UPCOMING" &&
             (isCommish ? (
-              <SpinPanel state={state} onSpun={setState} />
+              <SpinPanel state={state} onSpun={applyResult} />
             ) : (
               <p className="card text-slate-300">The draft opens when the commissioner spins the wheel.</p>
             ))}
@@ -182,7 +190,7 @@ function DraftRoom({ raceId }: { raceId: string }) {
           )}
 
           {isCommish && hasOrder && (
-            <CommishPanel state={state} meId={me.id} onBehalf={onBehalf} setOnBehalf={setOnBehalf} onState={setState} />
+            <CommishPanel state={state} meId={me.id} onBehalf={onBehalf} setOnBehalf={setOnBehalf} onState={applyResult} />
           )}
           <AuditLog raceId={raceId} />
         </>

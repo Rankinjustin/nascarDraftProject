@@ -38,11 +38,17 @@ export async function completeRace(raceId: string, actor: User, now = new Date()
       UPDATE "RaceResult" SET "finishPosition" = "runningPosition", "updatedAt" = now()
       WHERE "raceId" = ${raceId} AND "finishPosition" IS NULL`;
 
+    // With no results at all, every roster would score fieldSize + 1: a league-wide tie announced as the result,
+    // and results_posted is never sent twice. The finishing order has to be entered first.
+    const results = await tx.raceResult.findMany({ where: { raceId } });
+    if (results.length === 0) {
+      throw conflict("NO_RESULTS", "This race has no results yet. Paste the finishing order below, then complete it.");
+    }
+
     // 3–5. Score every drafter. Left join: a drafted driver with no result row arrives as null; empty slots are padded.
     const fieldSize = await fieldSizeFor(tx, raceId);
     const order = await tx.draftOrder.findMany({ where: { raceId }, include: { user: true }, orderBy: { pickPosition: "asc" } });
     const picks = await tx.pick.findMany({ where: { raceId }, orderBy: { overallPickNumber: "asc" }, include: { driver: true } });
-    const results = await tx.raceResult.findMany({ where: { raceId } });
     const entries = await tx.raceEntry.findMany({ where: { raceId } });
     const finishByDriver = new Map(results.map((r) => [r.driverId, r.finishPosition]));
     const carByDriver = new Map(entries.map((e) => [e.driverId, e.carNumber]));

@@ -1,37 +1,31 @@
 /**
  * Seeds the current season, its points-race schedule, the driver field, and the league's users.
- * Safe to re-run: everything is upserted by a natural key. Races that already exist are left alone.
+ * Safe to re-run: it only adds what's missing. Races, drivers, and members that already exist are left alone; after the
+ * first run they're edited in the app (Admin, the race lock, the entry-list import), and a re-run must not undo that.
  *
  * Data files (prisma/seed-data/):
- *   users.json        — the real league; gitignored so phone numbers stay out of the repo.
- *                       Falls back to users.example.json (placeholders) if missing.
- *   races-2026.json   — Cup points races from NASCAR's cacher race_list_basic.json.
- *   drivers.json      — the field from the most recent race's weekend feed.
+ *   users.json         — the real league; gitignored so phone numbers stay out of the repo. Without it, development
+ *                        seeds placeholders from users.example.json and production leaves members alone.
+ *   races-<year>.json  — Cup points races from NASCAR's cacher race_list_basic.json (scripts/season-schedule.ts). The
+ *                        newest year is the current season, so adding next year's file is the season rollover.
+ *   drivers.json       — the field from a 2026 weekend feed, so the first draft works before any entry-list import.
  */
 import { PrismaClient, type Role } from "@prisma/client";
 import { normalizePhone } from "@dnd/shared";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { issueSetupLink } from "../src/auth/setupTokens";
+import type { FeedScheduleRace } from "../src/integrations/nascarFeed";
 import { zonedInstant } from "../src/notifications/quietHours";
 
 const prisma = new PrismaClient();
 const dataDir = join(dirname(fileURLToPath(import.meta.url)), "seed-data");
 
-const SEASON = { year: 2026, seriesId: 1, name: "2026 NASCAR Cup Series" };
-
 interface SeedUser {
   displayName: string;
   phoneNumber: string;
   role?: Role;
-}
-interface SeedRace {
-  nascarRaceId: number;
-  raceName: string;
-  trackName: string;
-  startTimeEastern: string; // "2026-10-04T17:30:00", no zone — NASCAR publishes Eastern local time
-  totalLaps: number | null;
 }
 interface SeedDriver {
   nascarDriverId: number;
@@ -50,15 +44,23 @@ function easternToUtc(local: string): Date {
   return zonedInstant({ year: year!, month: month!, day: day!, hour: hour!, minute: minute! }, "America/New_York");
 }
 
+/** The newest races-<year>.json. */
+function currentSeasonYear(): number {
+  const years = readdirSync(dataDir).flatMap((f) => /^races-(\d{4})\.json$/.exec(f)?.[1] ?? []).map(Number);
+  if (years.length === 0) throw new Error(`No races-<year>.json in ${dataDir}.`);
+  return Math.max(...years);
+}
+
 async function main() {
+  const year = currentSeasonYear();
   const season = await prisma.season.upsert({
-    where: { year_seriesId: { year: SEASON.year, seriesId: SEASON.seriesId } },
-    update: { name: SEASON.name, isCurrent: true },
-    create: { ...SEASON, isCurrent: true },
+    where: { year_seriesId: { year, seriesId: 1 } },
+    update: { isCurrent: true },
+    create: { year, seriesId: 1, name: `${year} NASCAR Cup Series`, isCurrent: true },
   });
   await prisma.season.updateMany({ where: { id: { not: season.id } }, data: { isCurrent: false } });
 
-  const races = readJson<SeedRace[]>("races-2026.json");
+  const races = readJson<FeedScheduleRace[]>(`races-${year}.json`);
   for (const r of races) {
     await prisma.race.upsert({
       where: { nascarRaceId: r.nascarRaceId },
@@ -75,20 +77,22 @@ async function main() {
       },
     });
   }
-  console.log(`Season "${season.name}": ${races.length} races`);
+  console.log(`Season "${season.name}" (current): ${races.length} races`);
 
   const drivers = readJson<SeedDriver[]>("drivers.json");
   for (const d of drivers) {
-    await prisma.driver.upsert({
-      where: { nascarDriverId: d.nascarDriverId },
-      update: { driverName: d.driverName, carNumber: d.carNumber, teamName: d.teamName },
-      create: d,
-    });
+    // Create only: the entry-list import keeps car numbers and teams current, and this file goes stale.
+    await prisma.driver.upsert({ where: { nascarDriverId: d.nascarDriverId }, update: {}, create: d });
   }
   console.log(`Drivers: ${drivers.length}`);
 
-  const usersFile = existsSync(join(dataDir, "users.json")) ? "users.json" : "users.example.json";
-  if (usersFile === "users.example.json") {
+  let usersFile = "users.json";
+  if (!existsSync(join(dataDir, usersFile))) {
+    if (process.env.NODE_ENV === "production") {
+      console.log("Users: no users.json given, so members are left as they are.");
+      return;
+    }
+    usersFile = "users.example.json";
     console.warn("\n⚠ users.json not found — seeding PLACEHOLDER users from users.example.json.");
     console.warn("  Copy it to users.json, fill in the real league, and re-run the seed.\n");
   }
@@ -100,13 +104,15 @@ async function main() {
     if (!phoneNumber) throw new Error(`Bad phone number for ${u.displayName}: "${u.phoneNumber}"`);
     const user = await prisma.user.upsert({
       where: { phoneNumber },
-      update: { displayName: u.displayName, role: u.role ?? "MEMBER" },
+      // Create only: once someone exists, their name and role are changed in Admin.
+      update: {},
       create: { phoneNumber, displayName: u.displayName, role: u.role ?? "MEMBER" },
     });
-    // Anyone who hasn't set a password yet gets a fresh link (older links stop working).
+    // Anyone who hasn't set a password yet gets a fresh link (older links stop working). It's also the way back in for
+    // a commissioner whose first link expired before they used it.
     if (!user.passwordHash) links.push({ name: user.displayName, link: await issueSetupLink(user.id, prisma) });
   }
-  console.log(`Users: ${users.length}`);
+  console.log(`Users: ${users.length} in ${usersFile} (existing members unchanged)`);
 
   if (links.length) {
     console.log("\nSetup links (single use, valid 7 days) — send each person theirs:");

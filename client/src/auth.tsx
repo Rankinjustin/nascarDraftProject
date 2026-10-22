@@ -30,11 +30,22 @@ export function useSetMe() {
 }
 
 export function RequireAuth({ children, commissioner = false }: { children: ReactNode; commissioner?: boolean }) {
-  const { data: me, isPending, isError } = useMe();
+  const { data: me, isPending, isError, refetch } = useMe();
   const location = useLocation();
 
   if (isPending) return <div className="p-6 text-slate-400">Loading…</div>;
-  if (isError) return <div className="p-6 text-red-400">Can't reach the server. Check your connection and try again.</div>;
+  // Only when there's no user to fall back on. A failed background refetch keeps the cached user, so a weak signal
+  // at the track doesn't replace the page (and its stale-but-useful data) with this message.
+  if (isError && me === undefined) {
+    return (
+      <div className="flex flex-col items-start gap-3 p-6">
+        <p className="text-red-400">Can't reach the server. Check your connection and try again.</p>
+        <button type="button" className="btn-secondary" onClick={() => void refetch()}>
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (!me) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   if (commissioner && me.role !== "COMMISSIONER") return <Navigate to="/" replace />;
   return <>{children}</>;

@@ -12,7 +12,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "postinstall": "prisma generate",
-    "capture:feed": "tsx --env-file=.env scripts/capture-feed.ts"
+    "capture:feed": "tsx --env-file=.env scripts/capture-feed.ts",
+    "season:schedule": "tsx --env-file=.env scripts/season-schedule.ts"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"

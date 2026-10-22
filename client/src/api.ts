@@ -131,7 +131,8 @@ export const api = {
     request<DraftState>("POST", `/races/${raceId}/draft-order`, userIds ? { userIds } : {}),
   makePick: (raceId: string, body: { driverId: string; overallPickNumber: number; onBehalfOfUserId?: string }) =>
     request<DraftState>("POST", `/races/${raceId}/picks`, body),
-  revertLastPick: (raceId: string) => request<DraftState>("DELETE", `/races/${raceId}/picks/last`),
+  revertLastPick: (raceId: string, overallPickNumber: number) =>
+    request<DraftState>("DELETE", `/races/${raceId}/picks/last`, { overallPickNumber }),
   swapPick: (raceId: string, overallPickNumber: number, driverId: string) =>
     request<DraftState>("PUT", `/races/${raceId}/picks/${overallPickNumber}`, { driverId }),
   resetDraft: (raceId: string) => request<DraftState>("POST", `/races/${raceId}/draft/reset`),

@@ -5,10 +5,11 @@
 #   sudo dnd deploy <release.tar.gz> [--force]                 ship a new build (keeps the database and keys)
 #   sudo dnd rollback                                          back to the build before the last deploy (not the database)
 #   sudo dnd ci-setup                                          make the key GitHub uses to deploy on every push
-#   sudo dnd seed <users.json>                                 load the season, drivers, and league; prints setup links
+#   sudo dnd seed [users.json]                                 add the newest season, drivers, and league; prints setup links
 #   sudo dnd logs                                              follow the app's log
 #   sudo dnd status                                            is everything running?
 #   sudo dnd backup                                            take a database backup now
+#   sudo dnd restore <backup.dump>                             replace the database with a backup (backs up first)
 set -Eeuo pipefail
 
 APP_DIR=/opt/draft-and-draft
@@ -26,6 +27,30 @@ step() { echo; echo "==> $*"; }
 
 # Runs a command as the app user with the server's environment loaded.
 as_app() { sudo -u "$APP_USER" -H bash -c "set -a; . $CONF_DIR/server.env; set +a; $1"; }
+
+# The backup script: cron.daily runs it nightly, and deploy and restore run it first. Each run gets its own
+# timestamped file, written in full before it gets its name, and a failed dump exits non-zero, which stops a deploy
+# before its migrations instead of leaving a cut-off file in place of a good one. Rewritten on every deploy, so a
+# server set up with an older version gets this one.
+install_backup_job() {
+  cat >/etc/cron.daily/draft-and-draft-backup <<EOF
+#!/bin/sh
+set -eu
+file="$BACKUP_DIR/$DB_NAME-\$(date +%Y-%m-%d-%H%M%S).dump"
+trap 'rm -f "\$file.partial"' EXIT
+sudo -u postgres pg_dump -Fc $DB_NAME >"\$file.partial"
+mv "\$file.partial" "\$file"
+echo "Backed up to \$file"
+find "$BACKUP_DIR" -name '*.dump' -mtime +14 -delete
+EOF
+  chmod 755 /etc/cron.daily/draft-and-draft-backup
+}
+
+# Applied migrations, so a failed deploy can tell whether it changed the database. 0 before the first one.
+migration_count() {
+  [[ -n $(sudo -u postgres psql -d $DB_NAME -tAc "SELECT to_regclass('public._prisma_migrations')") ]] || { echo 0; return; }
+  sudo -u postgres psql -d $DB_NAME -tAc 'SELECT count(*) FROM _prisma_migrations'
+}
 
 setup() {
   local domain=${1:-} email=${2:-} tarball=${3:-}
@@ -156,12 +181,7 @@ EOF
   systemctl reload-or-restart caddy
 
   step "Nightly database backup (kept 14 days)"
-  cat >/etc/cron.daily/draft-and-draft-backup <<EOF
-#!/bin/sh
-sudo -u postgres pg_dump -Fc $DB_NAME >"$BACKUP_DIR/$DB_NAME-\$(date +%F).dump"
-find "$BACKUP_DIR" -name '*.dump' -mtime +14 -delete
-EOF
-  chmod 755 /etc/cron.daily/draft-and-draft-backup
+  install_backup_job
 
   install -m 755 "$(readlink -f "$0")" /usr/local/bin/dnd
   deploy "$tarball"
@@ -199,6 +219,7 @@ deploy() {
   fi
 
   step "Backing up the database first"
+  install_backup_job
   /etc/cron.daily/draft-and-draft-backup
 
   step "Unpacking $tarball"
@@ -206,6 +227,9 @@ deploy() {
   rm -rf "$next"
   mkdir -p "$next"
   tar -xzf "$tarball" -C "$next"
+  # This build's dnd.sh becomes the root command /usr/local/bin/dnd at the end. Take the copy now, while the folder is
+  # still root's: from here on the app user owns it, and npm ci runs every package's install script as that user.
+  install -m 700 "$next/deploy/gcp/dnd.sh" "$CONF_DIR/dnd.next"
   chown -R "$APP_USER:$APP_USER" "$next"
 
   step "Installing packages (a few minutes on this small server)"
@@ -224,6 +248,8 @@ deploy() {
   sudo -u "$APP_USER" -H env VITE_APP_NAME="$name" bash -c "cd $next && npm exec -w client -- vite build"
 
   step "Updating the database"
+  local migrations
+  migrations=$(migration_count)
   as_app "cd $next/server && npx prisma migrate deploy"
 
   step "Switching to the new build"
@@ -233,9 +259,19 @@ deploy() {
   mv "$next" "$APP_DIR"
   systemctl start $SERVICE
 
-  came_up || die "the app didn't answer on its health check. The previous build is in $APP_DIR.previous (sudo dnd rollback)."
-  # Keep this command in step with the build it just shipped.
-  install -m 755 "$APP_DIR/deploy/gcp/dnd.sh" /usr/local/bin/dnd
+  if ! came_up; then
+    # Going back on its own is only safe while the database is still the one the previous build knows.
+    if [[ -d $APP_DIR.previous && $(migration_count) == "$migrations" ]]; then
+      echo "The new build didn't come up and didn't change the database, so going back to the previous build." >&2
+      swap_builds
+      came_up || die "the previous build didn't come up either. See the log above."
+      die "the new build didn't answer on its health check. The previous build is running again; the failed one is in $APP_DIR.previous."
+    fi
+    die "the app didn't answer on its health check. This deploy changed the database, so it wasn't rolled back on its own: the previous build is in $APP_DIR.previous (sudo dnd rollback), and the backup taken just before this deploy is in $BACKUP_DIR (sudo dnd restore)."
+  fi
+  # Keep this command in step with the build it just shipped (the copy taken before the app user owned the folder).
+  install -m 755 "$CONF_DIR/dnd.next" /usr/local/bin/dnd
+  rm -f "$CONF_DIR/dnd.next"
 }
 
 came_up() {
@@ -251,18 +287,45 @@ came_up() {
   return 1
 }
 
-# Swaps the current build with the previous one, so running it again undoes it. The database is left as it is.
-rollback() {
-  [[ -d $APP_DIR.previous ]] || die "there's no previous build in $APP_DIR.previous."
-  echo "Warning: database migrations from the newer build are NOT undone. If it changed the database, the older" >&2
-  echo "build may not work with it; restore a backup from $BACKUP_DIR (taken before every deploy) if so." >&2
+# Swaps the current build with the previous one and restarts, so running it again undoes it.
+swap_builds() {
   systemctl stop $SERVICE || true
   rm -rf "$APP_DIR.swap"
   mv "$APP_DIR" "$APP_DIR.swap"
   mv "$APP_DIR.previous" "$APP_DIR"
   mv "$APP_DIR.swap" "$APP_DIR.previous"
   systemctl start $SERVICE
+}
+
+# Back to the build before the last deploy. The database is left as it is.
+rollback() {
+  [[ -d $APP_DIR.previous ]] || die "there's no previous build in $APP_DIR.previous."
+  echo "Warning: database migrations from the newer build are NOT undone. If it changed the database, the older" >&2
+  echo "build may not work with it; restore the backup taken before that deploy (sudo dnd restore) if so." >&2
+  swap_builds
   came_up || die "the rolled-back build didn't answer on its health check either."
+}
+
+# Replaces the database with a backup, e.g. the one taken before a deploy whose migration went wrong. The current
+# database is backed up first, in case it's the wrong file.
+restore() {
+  local file=${1:-}
+  [[ -f $file ]] || die "usage: sudo dnd restore <backup.dump>   (the backups: ls -lt $BACKUP_DIR)"
+  file=$(readlink -f "$file")
+
+  step "Backing up the current database first"
+  install_backup_job
+  /etc/cron.daily/draft-and-draft-backup
+
+  step "Restoring $file"
+  systemctl stop $SERVICE || true
+  # One transaction, so a failed restore changes nothing. Read through stdin, so postgres needs no access to the file.
+  if ! sudo -u postgres pg_restore --clean --if-exists --single-transaction -d $DB_NAME <"$file"; then
+    systemctl start $SERVICE
+    die "the restore failed, so nothing was changed. The app is back up on the database as it was."
+  fi
+  systemctl start $SERVICE
+  came_up || die "the app didn't come up on the restored database. If the backup is from before a deploy that changed the database, run sudo dnd rollback too."
 }
 
 # Settings added after servers were first set up: appended with their defaults when server.env doesn't have them yet
@@ -319,10 +382,13 @@ ci_setup() {
   rm -rf "$tmp"
 }
 
+# Only adds what's missing (server/prisma/seed.ts). Without a users file, members are left alone: that's the new-season run.
 seed() {
   local users=${1:-}
-  [[ -f $users ]] || die "usage: sudo dnd seed <users.json>"
-  install -o "$APP_USER" -g "$APP_USER" -m 600 "$users" "$APP_DIR/server/prisma/seed-data/users.json"
+  if [[ -n $users ]]; then
+    [[ -f $users ]] || die "usage: sudo dnd seed [users.json]"
+    install -o "$APP_USER" -g "$APP_USER" -m 600 "$users" "$APP_DIR/server/prisma/seed-data/users.json"
+  fi
   as_app "cd $APP_DIR/server && npx tsx prisma/seed.ts"
 }
 
@@ -338,6 +404,7 @@ case ${1:-} in
     systemctl --no-pager status $SERVICE caddy postgresql | grep -E '●|Active:'
     curl -s http://localhost:3001/api/health && echo
     ;;
-  backup) /etc/cron.daily/draft-and-draft-backup && ls -lh "$BACKUP_DIR" ;;
+  backup) install_backup_job && /etc/cron.daily/draft-and-draft-backup && ls -lht "$BACKUP_DIR" ;;
+  restore) shift; restore "$@" ;;
   *) sed -n '/^set /q; 2,$p' "$0" | sed 's/^# \{0,1\}//' ;;
 esac

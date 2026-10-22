@@ -45,7 +45,9 @@ draftRouter.post("/:id/picks", requireAuth, async (req, res) => {
 
 draftRouter.delete("/:id/picks/last", requireCommissioner, async (req, res) => {
   const { id } = idParams.parse(req.params);
-  res.json(await revertLastPick(id, currentUser(req)));
+  // The pick the commissioner saw as last, like overallPickNumber on a pick: a stale board reverts nothing.
+  const { overallPickNumber } = z.object({ overallPickNumber: slot }).parse(req.body);
+  res.json(await revertLastPick(id, currentUser(req), overallPickNumber));
 });
 
 draftRouter.put("/:id/picks/:overallPickNumber", requireCommissioner, async (req, res) => {

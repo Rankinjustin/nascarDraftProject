@@ -1,4 +1,4 @@
-import type { DraftState } from "@dnd/shared";
+import type { DraftPickView, DraftState } from "@dnd/shared";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
@@ -50,7 +50,9 @@ export function CommishPanel({
           </>
         )}
 
-        {fillable && onClock && <FillSlot raceId={raceId} state={state} owner={onClock} onState={onState} />}
+        {fillable && onClock && state.nextOverallPickNumber !== null && (
+          <FillSlot raceId={raceId} state={state} slot={state.nextOverallPickNumber} owner={onClock} onState={onState} />
+        )}
 
         {state.race.status === "DRAFTING" && onClock && onClock.userId !== meId && (
           <div className="flex flex-col gap-2">
@@ -98,14 +100,17 @@ export function CommishPanel({
 }
 
 function RevertLast({ raceId, state, onState }: { raceId: string; state: DraftState; onState: (s: DraftState) => void }) {
-  const [confirming, setConfirming] = useState(false);
+  // The pick that was last when the commissioner tapped. It's what gets sent, so if someone picks while the confirm
+  // is open, the server refuses instead of reverting the newer pick.
+  const [confirming, setConfirming] = useState<DraftPickView | null>(null);
   const last = state.picks.at(-1);
   const revert = useMutation({
-    mutationFn: () => api.revertLastPick(raceId),
+    mutationFn: (overallPickNumber: number) => api.revertLastPick(raceId, overallPickNumber),
     onSuccess: (s) => {
-      setConfirming(false);
+      setConfirming(null);
       onState(s);
     },
+    onError: () => setConfirming(null),
   });
   if (!last) return null;
 
@@ -114,13 +119,13 @@ function RevertLast({ raceId, state, onState }: { raceId: string; state: DraftSt
       <h3 className="font-semibold">Revert last pick</h3>
       {confirming ? (
         <ConfirmRow
-          label={`Revert pick ${last.overallPickNumber} (${last.driverName})`}
+          label={`Revert pick ${confirming.overallPickNumber} (${confirming.driverName})`}
           pending={revert.isPending}
-          onConfirm={() => revert.mutate()}
-          onCancel={() => setConfirming(false)}
+          onConfirm={() => revert.mutate(confirming.overallPickNumber)}
+          onCancel={() => setConfirming(null)}
         />
       ) : (
-        <button type="button" className="btn-secondary" onClick={() => setConfirming(true)}>
+        <button type="button" className="btn-secondary" onClick={() => setConfirming(last)}>
           Revert pick {last.overallPickNumber}: {last.displayName} — {last.driverName}
         </button>
       )}
@@ -181,16 +186,17 @@ function SwapPick({ raceId, state, onState }: { raceId: string; state: DraftStat
 function FillSlot({
   raceId,
   state,
+  slot,
   owner,
   onState,
 }: {
   raceId: string;
   state: DraftState;
+  slot: number;
   owner: { displayName: string };
   onState: (s: DraftState) => void;
 }) {
   const [driverId, setDriverId] = useState("");
-  const slot = state.picks.length + 1;
   const fill = useMutation({
     mutationFn: () => api.swapPick(raceId, slot, driverId),
     onSuccess: (s) => {

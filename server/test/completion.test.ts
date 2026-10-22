@@ -191,6 +191,17 @@ describe.skipIf(!hasTestDb)("completion, corrections, history, and season stats 
     expect(scoreOf(res.body, "Player B").driverFinishes.at(-1)!.finishPosition).toBe(10);
   });
 
+  it("complete with no results at all → 409 NO_RESULTS; still LIVE, nothing scored, nobody notified", async () => {
+    const ctx = await setup();
+    const res = await call(ctx.commish.cookie, "POST", `/races/${ctx.race.id}/complete`);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("NO_RESULTS");
+    expect((await prisma.race.findUniqueOrThrow({ where: { id: ctx.race.id } })).status).toBe("LIVE");
+    expect(await prisma.weeklyResult.count({ where: { raceId: ctx.race.id } })).toBe(0);
+    await settleNotifications();
+    expect(ofKind(push.sent, "results_posted")).toHaveLength(0);
+  });
+
   it("complete, results entry, and reopen refuse the wrong statuses", async () => {
     const ctx = await setup({ status: "LOCKED" });
     expect((await complete(ctx)).status).toBe(409);

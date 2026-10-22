@@ -7,6 +7,7 @@ import {
   normalizeEntryList,
   normalizeLiveFeed,
   normalizeQualifyingStart,
+  normalizeSchedule,
   refreshLiveFeed,
   setLiveFeedCache,
 } from "./nascarFeed";
@@ -92,5 +93,18 @@ describe("normalizeQualifyingStart", () => {
   it("returns null when the race or its qualifying entry is missing", () => {
     expect(normalizeQualifyingStart(fixture("cacher-2026-1-5630-weekend-feed-prerace-2026-10-02.json"), 1)).toBeNull();
     expect(normalizeQualifyingStart({ weekend_race: [{ race_id: 5, schedule: [{ run_type: 3, start_time_utc: "2026-10-04T21:30:00" }] }] }, 5)).toBeNull();
+  });
+});
+
+describe("normalizeSchedule", () => {
+  it("reads the season's points races, exactly as the seed's races-2026.json has them", () => {
+    const seedFile = join(import.meta.dirname, "..", "..", "prisma", "seed-data", "races-2026.json");
+    const races = normalizeSchedule(fixture("cacher-2026-race_list_basic.json"), 1);
+    expect(races).toEqual(JSON.parse(readFileSync(seedFile, "utf8")));
+    expect(races.some((r) => r.raceName.includes("Clash"))).toBe(false);
+  });
+
+  it("rejects a payload without the series", () => {
+    expect(() => normalizeSchedule({ series_2: [] }, 1)).toThrow(FeedShapeError);
   });
 });

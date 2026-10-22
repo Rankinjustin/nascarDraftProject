@@ -152,7 +152,10 @@ describe.skipIf(!hasTestDb)("draft (integration)", () => {
       for (let i = 0; i < 50; i++) {
         const state = await getState(ctx);
         const pick = state.onTheClock ? pickNext(ctx, state) : Promise.resolve(null);
-        await Promise.all([pick, call(ctx.commish.cookie, "DELETE", `/races/${ctx.race.id}/picks/last`)]);
+        const revert = call(ctx.commish.cookie, "DELETE", `/races/${ctx.race.id}/picks/last`, {
+          overallPickNumber: state.picks.at(-1)?.overallPickNumber ?? 1,
+        });
+        await Promise.all([pick, revert]);
         const numbers = await pickNumbers(ctx.race.id);
         expect(numbers).toEqual(numbers.map((_, idx) => idx + 1));
       }
@@ -233,7 +236,9 @@ describe.skipIf(!hasTestDb)("draft (integration)", () => {
       await settleNotifications();
       expect(ofKind(push.sent, "draft_complete")).toHaveLength(2);
 
-      const reverted = await call<DraftState>(ctx.commish.cookie, "DELETE", `/races/${ctx.race.id}/picks/last`);
+      const reverted = await call<DraftState>(ctx.commish.cookie, "DELETE", `/races/${ctx.race.id}/picks/last`, {
+        overallPickNumber: 6,
+      });
       expect(reverted.status).toBe(200);
       expect(reverted.body.race.status).toBe("DRAFTING");
       expect(await pickNumbers(ctx.race.id)).toEqual([1, 2, 3, 4, 5]);
@@ -376,9 +381,19 @@ describe.skipIf(!hasTestDb)("draft (integration)", () => {
       await spin(ctx);
       await pickSlots(ctx, 2);
       await prisma.race.update({ where: { id: ctx.race.id }, data: { status: "COMPLETED" } });
-      const res = await call(ctx.commish.cookie, "DELETE", `/races/${ctx.race.id}/picks/last`);
+      const res = await call(ctx.commish.cookie, "DELETE", `/races/${ctx.race.id}/picks/last`, { overallPickNumber: 2 });
       expect(res.status).toBe(409);
       expect(await prisma.pick.count()).toBe(2);
+    });
+
+    it("revert of a pick that's no longer last (someone picked since) → 409 STALE_BOARD, nothing deleted", async () => {
+      const ctx = await setup({ players: 2, drivers: 8 });
+      await spin(ctx);
+      await pickSlots(ctx, 3);
+      const res = await call(ctx.commish.cookie, "DELETE", `/races/${ctx.race.id}/picks/last`, { overallPickNumber: 2 });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe("STALE_BOARD");
+      expect(await pickNumbers(ctx.race.id)).toEqual([1, 2, 3]);
     });
 
     it("reset and regenerate after raceDate → 409 PICKS_CLOSED, no rows deleted", async () => {
@@ -570,6 +585,14 @@ describe.skipIf(!hasTestDb)("draft (integration)", () => {
       expect(old.body.code).toBe("CLIENT_OUTDATED");
       const current = await call(cookie, "GET", "/auth/me", undefined, { "X-App-Version": "100" });
       expect(current.status).toBe(200);
+    });
+  });
+
+  describe("health", () => {
+    it("reads the database, and needs no login or version header", async () => {
+      const res = await call(null, "GET", "/health");
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ ok: true, db: true });
     });
   });
 });

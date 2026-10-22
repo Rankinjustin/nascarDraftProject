@@ -47,4 +47,4 @@ runs the TypeScript directly through `tsx`, which is why it's a production depen
 
 ## Seed data
 
-`server/prisma/seed-data/races-2026.json` and `drivers.json` were generated from NASCAR's public cacher JSON (see SPEC Section 7); the raw responses are in `server/test/fixtures/`. To refresh for a new season, re-fetch `race_list_basic.json` for that year and a recent `weekend-feed.json`.
+`server/prisma/seed-data/races-<year>.json` is a season's Cup points races from NASCAR's public cacher JSON (SPEC Section 7), and `drivers.json` is the field from a 2026 weekend feed; the raw responses are in `server/test/fixtures/`. The newest `races-<year>.json` is the current season. For a new season, once NASCAR has published it: `npm run season:schedule -w server -- 2027`, commit the file it writes, and re-run the seed (on the server, `sudo dnd seed`). The seed only adds what's missing; members, drivers, and races that already exist are left as the app has them.

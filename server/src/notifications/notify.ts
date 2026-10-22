@@ -2,6 +2,7 @@ import { draftTurn } from "@dnd/shared";
 import type { NotificationLog, Race, User } from "@prisma/client";
 import { prisma } from "../db";
 import { env } from "../env";
+import { reportError } from "../instrument";
 import { discordChannel } from "./discord";
 import { isQuietHours } from "./quietHours";
 import { HELD_KINDS, type NotificationChannel, type NotificationKind, type NotificationPayload } from "./types";
@@ -144,6 +145,8 @@ async function deliver(
     await channel.send(payload);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
+    // At most five times per row (the attempts limit), so a dead phone can't flood the error tracker.
+    reportError(`Notification ${kind} via ${channel.key} to ${userId ?? "the league"} failed:`, err);
   }
   // updateMany: a revert may have cleared this row while the send was in flight.
   await prisma.notificationLog.updateMany({
@@ -171,12 +174,12 @@ export async function notify(notice: Notice, now = new Date()): Promise<void> {
         try {
           await deliver(channel, ctx, notice.kind, notice.overallPickNumber, userId, now);
         } catch (err) {
-          console.error(`Notification ${notice.kind} via ${channel.key} failed:`, err);
+          reportError(`Notification ${notice.kind} via ${channel.key} failed:`, err);
         }
       }
     }
   } catch (err) {
-    console.error(`Notification ${notice.kind} failed:`, err);
+    reportError(`Notification ${notice.kind} failed:`, err);
   }
 }
 
@@ -187,7 +190,7 @@ export async function retryRow(row: NotificationLog, now = new Date()): Promise<
   if (!channel || !ctx) return;
   const userId = row.userId === "BROADCAST" ? null : row.userId;
   await deliver(channel, ctx, row.kind as NotificationKind, row.overallPickNumber, userId, now).catch((err) =>
-    console.error(`Retry of ${row.kind} via ${row.channel} failed:`, err),
+    reportError(`Retry of ${row.kind} via ${row.channel} failed:`, err),
   );
 }
 

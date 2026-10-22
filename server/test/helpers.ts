@@ -97,6 +97,7 @@ export async function draftRace(raceId: string, userIds: string[], picks: [strin
 export interface ApiResponse<T = any> {
   status: number;
   body: T;
+  headers: Headers;
 }
 
 export async function call<T = any>(
@@ -116,7 +117,7 @@ export async function call<T = any>(
     body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
   });
   const text = await res.text();
-  return { status: res.status, body: text ? JSON.parse(text) : undefined };
+  return { status: res.status, body: text ? JSON.parse(text) : undefined, headers: res.headers };
 }
 
 export interface FakeChannel extends NotificationChannel {

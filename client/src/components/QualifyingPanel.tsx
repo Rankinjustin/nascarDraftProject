@@ -2,7 +2,7 @@ import type { RaceDetail } from "@dnd/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api";
-import { keys } from "../queries";
+import { keys, useInvalidateRace } from "../queries";
 import { CarListField, parseCarList } from "./CarListField";
 import { ErrorText } from "./QueryState";
 
@@ -12,6 +12,7 @@ import { ErrorText } from "./QueryState";
  */
 export function QualifyingPanel({ race }: { race: RaceDetail }) {
   const queryClient = useQueryClient();
+  const invalidateRace = useInvalidateRace(race.id);
   const grid = useQuery({ queryKey: keys.qualifying(race.id), queryFn: () => api.getQualifying(race.id) });
   const [text, setText] = useState("");
   const parsed = parseCarList(text, race.entries);
@@ -20,8 +21,7 @@ export function QualifyingPanel({ race }: { race: RaceDetail }) {
     mutationFn: () => api.setQualifying(race.id, parsed.driverIds.map((driverId, i) => ({ driverId, startPosition: i + 1 }))),
     onSuccess: (rows) => {
       queryClient.setQueryData(keys.qualifying(race.id), rows);
-      void queryClient.invalidateQueries({ queryKey: keys.live(race.id) });
-      void queryClient.invalidateQueries({ queryKey: keys.draft(race.id) });
+      invalidateRace();
       setText("");
     },
   });

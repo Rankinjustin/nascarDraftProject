@@ -13,6 +13,7 @@
  */
 import type { FeedSessionType, FlagLabel } from "@dnd/shared";
 import { env } from "../env";
+import { reportError } from "../instrument";
 
 export interface NormalizedVehicle {
   nascarDriverId: number;
@@ -114,7 +115,12 @@ export function normalizeLiveFeed(raw: unknown, fetchedAt = new Date()): Normali
   const vehicles = raw.vehicles.map((v, i) => {
     const vehicle = isObject(v) ? readVehicle(v, flagState) : null;
     // Never drop a car: a missing one would shrink fieldSize and change how DNFs score (SPEC Section 7).
-    if (!vehicle) throw new FeedShapeError(`Live feed vehicle ${i} is missing a driver id, name, car number, or position.`);
+    // The raw car goes in the message so the journal shows which field the feed left out.
+    if (!vehicle) {
+      throw new FeedShapeError(
+        `Live feed vehicle ${i} is missing a driver id, name, car number, or position: ${JSON.stringify(v).slice(0, 500)}`,
+      );
+    }
     return vehicle;
   });
   const runType = num(raw.run_type);
@@ -169,6 +175,36 @@ export function normalizeQualifyingStart(raw: unknown, nascarRaceId: number): Da
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+export interface FeedScheduleRace {
+  nascarRaceId: number;
+  raceName: string;
+  trackName: string;
+  /** Zone-less Eastern wall-clock time, as NASCAR publishes it: "2026-10-04T17:30:00". */
+  startTimeEastern: string;
+  totalLaps: number | null;
+}
+
+/**
+ * A season's points races from the cacher race_list_basic.json (verified 2026-10-02): race_type_id 1 (2 is an
+ * exhibition), with race_date, which is the current start time after a postponement (date_scheduled is the original).
+ */
+export function normalizeSchedule(raw: unknown, seriesId: number): FeedScheduleRace[] {
+  const list = isObject(raw) ? raw[`series_${seriesId}`] : null;
+  if (!Array.isArray(list)) throw new FeedShapeError(`Schedule has no series_${seriesId} list.`);
+  return list
+    .filter((r): r is Raw => isObject(r) && num(r.race_type_id) === 1)
+    .map((r) => {
+      const nascarRaceId = num(r.race_id);
+      const raceName = str(r.race_name);
+      const trackName = str(r.track_name);
+      const startTimeEastern = str(r.race_date);
+      if (nascarRaceId === null || raceName === null || trackName === null || startTimeEastern === null) {
+        throw new FeedShapeError(`Schedule race ${JSON.stringify(r).slice(0, 200)} is missing its id, name, track, or date.`);
+      }
+      return { nascarRaceId, raceName, trackName, startTimeEastern, totalLaps: positiveOrNull(r.scheduled_laps) };
+    });
+}
+
 // --- Fetching ---------------------------------------------------------------------------------
 
 export type FetchRaw = (url: string) => Promise<unknown>;
@@ -192,6 +228,7 @@ export const fetchRaw: FetchRaw = async (url) => {
 export const liveFeedUrl = () => `${env.NASCAR_FEED_BASE_URL}/live/feeds/live-feed.json`;
 export const weekendFeedUrl = (year: number, seriesId: number, nascarRaceId: number) =>
   `${env.NASCAR_FEED_BASE_URL}/cacher/${year}/${seriesId}/${nascarRaceId}/weekend-feed.json`;
+export const scheduleUrl = (year: number) => `${env.NASCAR_FEED_BASE_URL}/cacher/${year}/race_list_basic.json`;
 
 // Last good feed, kept in memory. Client requests never call NASCAR; they read this and the database.
 let cached: NormalizedRaceFeed | null = null;
@@ -230,8 +267,10 @@ export async function refreshLiveFeed(fetcher: FetchRaw = fetchRaw): Promise<Fee
     cached = normalizeLiveFeed(raw);
     stale = false;
   } catch (err) {
+    // Reported once per outage rather than on every 20-second retry; repeats only go to the journal.
+    if (stale) console.warn("[nascarFeed] live feed fetch failed again:", err instanceof Error ? err.message : err);
+    else reportError("[nascarFeed] live feed fetch failed; serving the last good copy:", err);
     stale = true;
-    console.warn("[nascarFeed] live feed fetch failed; serving the last good copy:", err instanceof Error ? err.message : err);
   }
   return liveFeedSnapshot();
 }

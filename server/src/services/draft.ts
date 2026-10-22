@@ -251,8 +251,11 @@ function assertEditable(status: string): void {
   if (status !== "DRAFTING" && status !== "LOCKED") throw notEditable();
 }
 
-/** DELETE /races/:id/picks/last — only ever the last pick, so pick numbers stay contiguous. */
-export async function revertLastPick(raceId: string, actor: User, now = new Date()): Promise<DraftState> {
+/**
+ * DELETE /races/:id/picks/last — only ever the last pick, so pick numbers stay contiguous. `expected` is the pick the
+ * commissioner saw as last; if another pick landed (or was reverted) since, nothing is reverted.
+ */
+export async function revertLastPick(raceId: string, actor: User, expected: number, now = new Date()): Promise<DraftState> {
   const notices: Notice[] = [];
   await withRaceLock(raceId, async (tx, race) => {
     assertEditable(race.status);
@@ -262,6 +265,12 @@ export async function revertLastPick(raceId: string, actor: User, now = new Date
       include: { driver: true, user: true },
     });
     if (!last) throw conflict("NO_PICKS", "There are no picks to revert.");
+    if (last.overallPickNumber !== expected) {
+      throw conflict(
+        "STALE_BOARD",
+        `The last pick is now pick ${last.overallPickNumber}, not ${expected}, so nothing was reverted. Check the board and try again.`,
+      );
+    }
 
     await tx.pick.delete({ where: { id: last.id } });
     await logDraftEvent(tx, raceId, actor.id, "PICK_REVERTED", {

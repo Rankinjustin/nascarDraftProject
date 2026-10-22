@@ -42,6 +42,7 @@ export function ResultsPanel({ race }: { race: RaceDetail }) {
     mutationFn: () => api.replaceResults(race.id, parsed.driverIds.map((driverId, i) => ({ driverId, finishPosition: i + 1 }))),
     onSuccess: (view) => {
       queryClient.setQueryData(keys.live(race.id), view);
+      refresh();
       setPaste("");
     },
   });
@@ -51,6 +52,7 @@ export function ResultsPanel({ race }: { race: RaceDetail }) {
     mutationFn: () => api.patchResults(race.id, pending.map(([driverId, v]) => ({ driverId, finishPosition: Number(v) }))),
     onSuccess: (view) => {
       queryClient.setQueryData(keys.live(race.id), view);
+      refresh();
       setFixes({});
     },
   });

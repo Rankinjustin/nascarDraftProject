@@ -39,7 +39,8 @@ export function useDraft(raceId: string | undefined, meId: string | undefined, p
       if (state.race.status === "UPCOMING" || state.race.status === "DRAFTING") {
         return state.onTheClock?.userId === meId ? 10_000 : 3_000;
       }
-      return 30_000;
+      // A finished week only changes if a commissioner reopens it; that refreshes on focus like everything else.
+      return state.race.status === "COMPLETED" ? false : 30_000;
     },
   });
 }
@@ -50,11 +51,17 @@ export function useLive(raceId: string, enabled = true) {
     queryKey: keys.live(raceId),
     queryFn: () => api.getLive(raceId),
     enabled,
-    refetchInterval: (query) => (query.state.data?.race.status === "LIVE" ? 15_000 : 60_000),
+    refetchInterval: (query) => {
+      const status = query.state.data?.race.status;
+      return status === "LIVE" ? 15_000 : status === "COMPLETED" ? false : 60_000;
+    },
   });
 }
 
-/** After a commissioner changes a race, refresh every view that shows it. */
+/**
+ * After any write to a race, refresh every view that shows it. The one rule for race writes: put the server's response
+ * in the cache, then call this (refetching that one query again is cheap, and nothing else is left stale).
+ */
 export function useInvalidateRace(raceId: string) {
   const queryClient = useQueryClient();
   return () => {

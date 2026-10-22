@@ -69,7 +69,7 @@ Commissioner actions are privileged but **not silent** — every one of them wri
 **Deploy freeze on race weekends.** Every deploy restarts that one process, client changes included: the feed cache is lost and a qualifying capture in progress is interrupted. So `dnd deploy` — manual or from CI — refuses from an hour before qualifying (two days before the race when qualifying's time isn't known) until the race is completed, unless given `--force`. A race left `LIVE` stops blocking a day after its start, like the stale-`LIVE` rule in Section 9. Clients already running pick up a new build through the service worker (see "App updates", Section 11).
 
 **Monitoring.** Scheduled jobs fail silently — a dead sweeper on a Thursday shows up as "nobody got notified," discovered days later. So:
-- `GET /api/health` (public, no data) returns `{ ok, jobs: { deadline, poller, sweeper } }` with each job's last successful run time, and returns **503** if any job hasn't run in 3× its interval.
+- `GET /api/health` (public, no data) returns `{ ok, db, jobs: { deadline, poller, sweeper } }` with each job's last successful run time, and returns **503** if any job hasn't run in 3× its interval or the database can't be read. The database check reads a real row (not `SELECT 1`), so a build whose schema doesn't match the database — a rollback past a migration — fails it; `dnd deploy` and `dnd rollback` use it to decide the app came up.
 - Point a free uptime monitor (e.g. UptimeRobot) at it, alerting the commissioners.
 - Send uncaught errors to an error tracker (e.g. Sentry's free tier) via `SENTRY_DSN`. Optional in development; set it in production.
 
@@ -308,7 +308,7 @@ After commit, fire notifications (Section 14). Return the updated draft state so
 
 All of these run in `withRaceLock`, log a `DraftEvent`, and **reject with 409 unless the race is `DRAFTING` or `LOCKED`**. Once a race is `LIVE` or later, rosters are historical record — changing them would silently change a result people have already seen.
 
-- **Revert last pick** — deletes the pick with the highest `overallPickNumber`, logs `PICK_REVERTED`. Only ever the last one, so pick numbers stay contiguous with no renumbering logic. If the race was `LOCKED` and `now < raceDate`, it returns to `DRAFTING`; after the deadline it stays `LOCKED` (the slot is simply empty again). Clears the matching notification log rows (Section 14).
+- **Revert last pick** — deletes the pick with the highest `overallPickNumber`, logs `PICK_REVERTED`. The request carries the `overallPickNumber` the commissioner saw as last; if it isn't the last pick anymore (someone picked while the confirm was open), it's refused with **409 `STALE_BOARD`** and nothing is deleted. Only ever the last one, so pick numbers stay contiguous with no renumbering logic. If the race was `LOCKED` and `now < raceDate`, it returns to `DRAFTING`; after the deadline it stays `LOCKED` (the slot is simply empty again). Clears the matching notification log rows (Section 14).
 - **Swap driver on a pick** — replaces the driver on **any** existing pick with another eligible, undrafted driver. The pick keeps its slot, owner, and number; logs `PICK_SWAPPED` with old and new driver. **This is how withdrawals and ineligible drivers are handled.** With a multi-day draft, a driver taken on Wednesday at pick 4 might withdraw on Saturday at pick 20; "revert last pick" would have to unwind 16 picks to reach it. The commissioner swaps instead, usually after asking the affected member what they want.
 - **Reset draft** — deletes all picks, keeps the draft order, logs `DRAFT_RESET`, returns status to `DRAFTING`. **Only allowed while `now < raceDate`** (else **409 `PICKS_CLOSED`**) — after the deadline nobody could re-pick, so a reset would just wipe every roster. Requires typed confirmation in the UI. Clears the race's draft notification log rows.
 - **Regenerate order** — the more destructive action: deletes picks *and* draft order, returns the race to `UPCOMING` so the wheel can be spun again, logs `ORDER_REGENERATED`. **Only allowed while `now < raceDate`** (else **409 `PICKS_CLOSED`**). Requires typed confirmation. Exists for genuine mistakes (wrong set of players), and because it's logged, it's visible if abused. Clears the race's draft notification log rows.
@@ -459,7 +459,7 @@ The Complete button is **always available to the commissioner** on a `LIVE` or `
 
 `POST /api/races/:id/complete` runs inside `withRaceLock`:
 
-1. Reject unless status is `LIVE` or `CORRECTING` → **409**.
+1. Reject unless status is `LIVE` or `CORRECTING` → **409**. Reject a race with no `RaceResult` rows at all → **409 `NO_RESULTS`**: every roster would score `fieldSize + 1`, the whole league would tie for the win, and `results_posted` can't be sent again after a correction. Enter the finishing order first (below).
 2. Copy `runningPosition` → `finishPosition` **only for rows where `finishPosition` is null**. A re-completion must never overwrite a position the commissioner corrected by hand — that is the entire reason someone would reopen a race.
 3. Compute `fieldSize` (Section 4).
 4. Load each drafter's picks; build `UserEntry[]` with a **left join** to `RaceResult`, so a drafted driver with no result row arrives as `finishPosition: null`. **Pad every roster to 3 entries** with `{ driverId: null, finishPosition: null }` for slots left empty when the deadline closed the draft. Do not throw on either.
@@ -554,7 +554,7 @@ DELETE /races/:id/entries/:entryId   [C]     → 409 if drafted
 POST   /races/:id/draft-order                [C]  → spin the wheel; optional { userIds[] } (see §10)
 GET    /races/:id/draft                           → { order, snake, picks, onTheClock, nextOverallPickNumber, deadline, availableDrivers }
 POST   /races/:id/picks                           → { driverId, overallPickNumber, onBehalfOfUserId? }
-DELETE /races/:id/picks/last                 [C]  → revert
+DELETE /races/:id/picks/last                 [C]  → { overallPickNumber } revert, if that's still the last pick
 PUT    /races/:id/picks/:overallPickNumber   [C]  → { driverId } swap the driver on that pick, or fill the next missed slot (Section 8)
 POST   /races/:id/draft/reset                [C]
 POST   /races/:id/draft/regenerate           [C]
@@ -581,7 +581,7 @@ POST   /notifications/test           → send yourself a test push (essential fo
 
 **Ops**
 ```
-GET    /health                       (public)  → { ok, jobs } — last run of each scheduled job; 503 if one is overdue (Section 2)
+GET    /health                       (public)  → { ok, db, jobs } — last run of each scheduled job; 503 if one is overdue or the database can't be read (Section 2)
 ```
 
 `GET /races/:id/live` is the workhorse of race day and returns both halves of the page in one response — one poll, one render, no chance of the two panels showing different laps.
@@ -700,8 +700,10 @@ Not aiming for high coverage. Aiming for the tests that would have caught a Sund
 - Picking a driver with no eligible `RaceEntry` → 400; picking an already-drafted driver → 409 `DRIVER_TAKEN`.
 - A pick after `raceDate` → 409 `PICKS_CLOSED`; the deadline job then locks the race and logs an event with a null actor.
 - Full draft → `LOCKED`; revert before the deadline → back to `DRAFTING` with contiguous pick numbers.
+- Revert naming a pick that's no longer the last → 409 `STALE_BOARD`, no rows deleted.
 - Swap the driver on pick 4 of 20 → pick 4 has the new driver, picks 5–20 untouched.
 - Complete a race → correct `WeeklyResult` scores and ranks, `finishPosition` populated.
+- Complete a race with no `RaceResult` rows → 409 `NO_RESULTS`; still `LIVE`, no `WeeklyResult` rows, no `results_posted`.
 - Complete a race whose draft closed with 2 empty slots → those slots score as `fieldSize + 1`, does not throw.
 - Scoring a roster where one drafted driver has no `RaceResult` row at all → scores as `fieldSize + 1`, does not throw.
 - Complete → reopen → patch a `finishPosition` → poller tick with a feed for this race → re-complete → the patched value survives, the poller wrote nothing, `WeeklyResult` reflects the patch.

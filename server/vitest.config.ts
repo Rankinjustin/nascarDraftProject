@@ -19,6 +19,8 @@ export default defineConfig({
       QUIET_HOURS_START: "00:00",
       QUIET_HOURS_END: "00:00",
       MIN_CLIENT_VERSION: "100",
+      // As behind Caddy: req.ip comes from X-Forwarded-For, so the login rate limit can be tested per client address.
+      TRUST_PROXY: "1",
       // Real channels stay off; tests install fakes.
       VAPID_PUBLIC_KEY: "",
       DISCORD_WEBHOOK_URL: "",

@@ -12,11 +12,13 @@ const SLOW_INTERVAL = 2 * 60 * 1000;
 
 let lastFetchAt = 0;
 let lastSession: FeedSessionType | null = null;
+let lastLogged = "";
 
 /** Tests only. */
 export function resetPollerState(): void {
   lastFetchAt = 0;
   lastSession = null;
+  lastLogged = "";
 }
 
 /**
@@ -47,6 +49,19 @@ export async function runPoller(now = new Date(), refresh: () => Promise<FeedSna
   const race = races.find(
     (r) => r.nascarRaceId === feed.nascarRaceId && (feed.seriesId === null || feed.seriesId === r.season.seriesId),
   );
+
+  // One line each time the feed moves to a new session (or its cars appear), so a missed qualifying capture can be
+  // traced in the journal: what the feed was showing, and whether it matched a race.
+  const session = `series ${feed.seriesId} race ${feed.nascarRaceId} ${feed.sessionType}`;
+  const seen = `${session} ${feed.vehicles.length > 0}`;
+  if (seen !== lastLogged) {
+    lastLogged = seen;
+    const match = race
+      ? `matches "${race.raceName}" (${race.status})`
+      : `no active race matches (active: ${races.map((r) => r.nascarRaceId).join(", ")})`;
+    console.log(`[poller] feed now: ${session}, ${feed.vehicles.length} cars; ${match}`);
+  }
+
   if (race) await applyFeed(race.id, feed, now);
 }
 

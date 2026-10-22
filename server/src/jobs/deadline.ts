@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { reportError } from "../instrument";
 import { dispatchAfterCommit } from "../notifications/notify";
 import { withRaceLock } from "../races/lock";
 import { applyTransition } from "../races/transition";
@@ -26,7 +27,7 @@ export async function runDeadlineJob(now = new Date()): Promise<string[]> {
         dispatchAfterCommit([{ raceId: id, kind: "draft_closed", overallPickNumber: 0, to: "league" }]);
       }
     } catch (err) {
-      console.error(`Deadline job failed for race ${id}:`, err);
+      reportError(`Deadline job failed for race ${id}:`, err);
     }
   }
   return closed;

@@ -94,14 +94,23 @@ sudo nohup dnd deploy ~/release.tar.gz > ~/deploy.log 2>&1 &
 tail -f ~/deploy.log
 ```
 
-Every deploy backs up the database first. The database, push keys, and settings are kept; settings added in a newer
-build are appended to `server.env` with their defaults. The server runs the TypeScript directly through `tsx` (a
+Every deploy backs up the database first, and stops before touching anything if that backup fails. The database, push
+keys, and settings are kept; settings added in a newer build are appended to `server.env` with their defaults. The server runs the TypeScript directly through `tsx` (a
 production dependency), and the deploy runs only the Vite build, not the typecheck, which CI or your PC already ran.
 
-**Rolling back.** The build before the last deploy is kept in `/opt/draft-and-draft.previous`. `sudo dnd rollback`
-swaps it back in and restarts (run it again to undo). It does **not** undo database migrations: if the newer build
-changed the database, the older code may not work with it, and you'd need to restore the backup taken just before
-that deploy (in `/var/backups/draft-and-draft`).
+**Rolling back.** The build before the last deploy is kept in `/opt/draft-and-draft.previous`. If a new build doesn't
+come up and the deploy didn't change the database, the deploy puts the previous build back on its own (and still
+reports a failure). Otherwise `sudo dnd rollback` swaps it back in and restarts (run it again to undo). It does **not**
+undo database migrations: if the newer build changed the database, the older code may not work with it, so also
+restore the backup taken just before that deploy. The deploy log names it (`Backed up to ...`):
+
+```bash
+sudo dnd rollback
+sudo dnd restore /var/backups/draft-and-draft/draft_and_draft-2026-10-22-140512.dump
+```
+
+`dnd restore` backs up the current database first (in case it's the wrong file), and runs as one transaction, so a
+failed restore changes nothing.
 
 **Race weekend freeze.** A restart drops the live-feed cache and can miss a qualifying capture or live results
 (SPEC Section 2), so every `dnd deploy`, manual or from GitHub, refuses from an hour before qualifying until the race is completed (a race
@@ -137,6 +146,7 @@ stops working immediately.
 | `sudo dnd status` | Is the app, HTTPS, and the database running? |
 | `sudo dnd logs` | Follow the app's log (Ctrl+C to stop) |
 | `sudo dnd backup` | Take a database backup now |
+| `sudo dnd restore <file>` | Replace the database with a backup (see "Rolling back") |
 | `sudo dnd rollback` | Go back to the previous build (see "Rolling back") |
 
 - **The app's name** (header, login page, Home Screen label) is the `APP_NAME="..."` line in
@@ -145,8 +155,20 @@ stops working immediately.
 - **Settings** live in `/etc/draft-and-draft/server.env` (Discord webhook, quiet hours, reminder timing). After editing:
   `sudo systemctl restart draft-and-draft`. Never change the `VAPID_` keys — every phone would have to turn
   notifications on again.
-- **Backups** run nightly to `/var/backups/draft-and-draft` and are kept 14 days. They protect against mistakes, not
-  against deleting the VM — now and then, download the newest one with the SSH window's **Download file** button.
+- **Backups** run nightly and before every deploy, each to its own timestamped file in `/var/backups/draft-and-draft`,
+  and are kept 14 days. They live on the VM's own disk, so they protect against mistakes, not against losing the VM.
+  For that, give the disk a snapshot schedule (one time, in the console): Compute Engine → **Snapshots** →
+  **Snapshot schedules** → **Create** — same region as the VM, daily, delete after 7 days, keep snapshots if the disk
+  is deleted. Then Compute Engine → **Disks** → the VM's disk → **Edit** → pick that schedule → **Save**. Snapshot
+  storage is not in the free tier; for this disk it should be well under a dollar a month (your budget alert will
+  say if not). Now and then, also download the newest backup with the SSH window's **Download file** button.
+- **New season:** after the last race, once NASCAR has published next year's schedule, on your PC run
+  `npm run season:schedule -w server -- 2027`, commit the `races-2027.json` it writes, and push. Then on the server:
+  `sudo dnd seed`. That adds the season, makes it current, and leaves last season's history alone. Without a
+  `users.json` it doesn't touch members; with one, it only adds the people who are new.
+- **Try a restore once,** off a race weekend, so the first one isn't in a hurry: `sudo dnd backup`, then
+  `sudo dnd restore` the newest file it lists. The app is down for a few seconds, and nothing changes unless someone
+  made a pick in between.
 - **Uptime alerts (optional):** a free monitor such as UptimeRobot pointed at `https://ourleague.duckdns.org/api/health`
   emails you when the app or one of its scheduled jobs stops.
 

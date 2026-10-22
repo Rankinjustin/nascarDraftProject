@@ -1,4 +1,4 @@
-import { ROUNDS } from "@dnd/shared";
+import { rosterFor } from "@dnd/shared";
 import { BellRing } from "lucide-react";
 import { Link } from "react-router";
 import { useMe } from "../auth";
@@ -14,7 +14,6 @@ export function HomePage() {
   const current = useCurrentRace();
   const draft = useDraft(current.data?.id, me?.id, false);
   const state = draft.data;
-  const mine = state?.picks.filter((p) => p.userId === me?.id) ?? [];
   const drafting = state && state.order.some((o) => o.userId === me?.id);
 
   return (
@@ -33,7 +32,7 @@ export function HomePage() {
             <section className="card">
               <h2 className="mb-2 font-semibold">Your roster</h2>
               <ol className="flex flex-col gap-2">
-                {Array.from({ length: ROUNDS }, (_, i) => mine[i]).map((p, i) => (
+                {rosterFor(me.id, state.picks).map((p, i) => (
                   <li key={i} className="flex min-h-11 items-center gap-3 rounded-lg bg-slate-800 px-3">
                     <span className="text-xs text-slate-500">Rd {i + 1}</span>
                     {p ? (
